@@ -5,7 +5,7 @@ from dataset.dataset import TextToSpeechDataset
 
 class RandomImbalancedSampler(Sampler):
     """Samples randomly imbalanced dataset (with repetition).
-    
+
     Argument:
         data_source -- instance of TextToSpeechDataset
     """
@@ -18,11 +18,11 @@ class RandomImbalancedSampler(Sampler):
             if label in lebel_freq: lebel_freq[label] += 1
             else: lebel_freq[label] = 1
 
-        total = float(sum(lebel_freq.values()))         
+        total = float(sum(lebel_freq.values()))
         weights = [total / lebel_freq[data_source.items[idx]['language']] for idx in range(len(data_source))]
 
-        self._sampler = WeightedRandomSampler(weights, len(weights)) 
-                
+        self._sampler = WeightedRandomSampler(weights, len(weights))
+
     def __iter__(self):
         return self._sampler.__iter__()
 
@@ -51,9 +51,9 @@ class PerfectBatchSampler(Sampler):
     """Samples a mini-batch of indices for the grouped ConvolutionalEncoder.
 
     For L samples languages and batch size B produces a mini-batch with
-    samples of a particular language L_i (random regardless speaker) 
+    samples of a particular language L_i (random regardless speaker)
     on the indices (into the mini-batch) i + k * L for k from 0 to B // L.
-    
+
     Thus can be easily reshaped to a tensor of shape [B // L, L * C, ...]
     with groups consistent with languages.
 
@@ -62,8 +62,8 @@ class PerfectBatchSampler(Sampler):
         languages -- list of languages of data_source to sample from
         batch_size -- total number of samples to be sampled in a mini-batch
         data_parallel_devices -- number of parallel devices used in the data parallel mode which splits batch as we need
-                                 to ensure that B (or smaller batch if drop_last is False) is divisible by (L * this_argument) 
-        shuffle -- if True, samples randomly, otherwise samples sequentially 
+                                 to ensure that B (or smaller batch if drop_last is False) is divisible by (L * this_argument)
+        shuffle -- if True, samples randomly, otherwise samples sequentially
         drop_last -- if True, drops last imcomplete batch
     """
 
@@ -88,11 +88,11 @@ class PerfectBatchSampler(Sampler):
         self._dp_devices = data_parallel_devices
 
     def __iter__(self):
-        
+
         batch = []
         iters = [iter(s) for s in self._samplers]
         done = False
-        
+
         while True:
             b = []
             for it in iters:
@@ -106,7 +106,7 @@ class PerfectBatchSampler(Sampler):
             if len(batch) == self._batch_size:
                 yield batch
                 batch = []
-        
+
         if not self._drop_last:
             if len(batch) > 0:
                 groups = len(batch) // len(self._samplers)
@@ -115,8 +115,8 @@ class PerfectBatchSampler(Sampler):
                 else:
                     batch = batch[:(groups // self._dp_devices) * self._dp_devices * len(self._samplers)]
                     if len(batch) > 0:
-                        yield batch 
-        
+                        yield batch
+
     def __len__(self):
         language_batch_size = self._batch_size // len(self._samplers)
         return min(((len(s) + language_batch_size - 1) // language_batch_size) for s in self._samplers)

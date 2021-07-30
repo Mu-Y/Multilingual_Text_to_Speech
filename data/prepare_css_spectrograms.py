@@ -11,11 +11,11 @@ from params.params import Params as hp
 if __name__ == '__main__':
     import argparse
     import re
-    
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--css10_directory", type=str, default="css10", help="Base directory of CSS10.")
-    parser.add_argument("--css_comvoi_directory", type=str, default="css_comvoi", help="Base directory of CSS10 with Common Voice.")
-    parser.add_argument("--comvoi_directory", type=str, default="comvoi_clean", help="Base directory of Common Voice.")
+    parser.add_argument("--css10_directory", type=str, default="/mnt/data2/mu/datasets/css10", help="Base directory of CSS10.")
+    parser.add_argument("--css_comvoi_directory", type=str, default="/mnt/data2/mu/datasets/css_comvoi", help="Base directory of CSS10 with Common Voice.")
+    parser.add_argument("--comvoi_directory", type=str, default="/mnt/data2/mu/datasets/comvoi_clean", help="Base directory of Common Voice.")
     parser.add_argument("--sample_rate", type=int, default=22050, help="Sample rate.")
     parser.add_argument("--num_fft", type=int, default=1102, help="Number of FFT frequencies.")
     parser.add_argument("--num_mels", type=int, default=80, help="Number of mel bins.")
@@ -36,9 +36,9 @@ if __name__ == '__main__':
         (args.css_comvoi_directory, "val.txt"),
     ]
 
-    spectrogram_dirs = [os.path.join(args.comvoi_directory, 'spectrograms'), 
+    spectrogram_dirs = [os.path.join(args.comvoi_directory, 'spectrograms'),
                         os.path.join(args.comvoi_directory, 'linear_spectrograms'),
-                        os.path.join(args.css10_directory, 'spectrograms'), 
+                        os.path.join(args.css10_directory, 'spectrograms'),
                         os.path.join(args.css10_directory, 'linear_spectrograms')]
     for x in spectrogram_dirs:
         if not os.path.exists(x): os.makedirs(x)
@@ -49,14 +49,14 @@ if __name__ == '__main__':
             metadata.append((d, fs, [line.rstrip().split('|') for line in f]))
 
     print(f'Please wait, this may take a very long time.')
-    for d, fs, m in metadata:  
+    for d, fs, m in metadata:
         print(f'Creating spectrograms for: {fs}')
 
         with open(os.path.join(d, fs), 'w', encoding='utf-8') as f:
             for i in m:
                 idx, s, l, a, _, _, raw_text, ph = i
-                spec_name = idx + '.npy'      
-                audio_path = os.path.join(d, a)       
+                spec_name = idx + '.npy'
+                audio_path = os.path.join(d, a)
                 audio_data = audio.load(audio_path)
 
                 splitted_a = a.split("/")

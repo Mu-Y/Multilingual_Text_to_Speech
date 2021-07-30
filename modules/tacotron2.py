@@ -10,6 +10,7 @@ from modules.encoder import Encoder, MultiEncoder, ConditionalEncoder, Convoluti
 from modules.cbhg import PostnetCBHG
 from modules.classifier import ReversalClassifier, CosineSimilarityClassifier
 from params.params import Params as hp
+import pdb
 
 
 class Prenet(torch.nn.Module):
@@ -72,7 +73,7 @@ class Postnet(torch.nn.Module):
     def forward(self, x, x_lengths):
         residual = x
         x = self._convs(x)
-        x += residual   
+        x += residual
         return x
 
 
@@ -88,10 +89,10 @@ class Decoder(torch.nn.Module):
         output is passed through stop token layer, frame prediction layer and pre-net
 
     Arguments:
-        output_dim -- size of the predicted frame, i.e. number of mels 
+        output_dim -- size of the predicted frame, i.e. number of mels
         decoder_dim -- size of the generator output (and also of all the LSTMs used in the decoder)
-        attention -- instance of the location-sensitive attention module 
-        generator_rnn -- instance of generator RNN 
+        attention -- instance of the location-sensitive attention module
+        generator_rnn -- instance of generator RNN
         attention_rnn -- instance of attention RNN
         context_dim -- size of the context vector produced by the given attention
         prenet -- instance of the pre-net module
@@ -110,13 +111,14 @@ class Decoder(torch.nn.Module):
         self._generator_lstm = generator_rnn
         self._frame_prediction = Linear(context_dim + decoder_dim, output_dim)
         self._stop_prediction = Linear(context_dim + decoder_dim, 1)
-        
+
         self._speaker_embedding, self._language_embedding = None, None
 
         if hp.multi_speaker and hp.speaker_embedding_dimension > 0:
             self._speaker_embedding = self._get_embedding(hp.speaker_embedding_dimension, hp.speaker_number)
         if hp.multi_language and hp.language_embedding_dimension > 0:
-            self._language_embedding = self._get_embedding(hp.language_embedding_dimension, len(hp.languages))
+            if not hp.one_hot_lang_emb:
+                self._language_embedding = self._get_embedding(hp.language_embedding_dimension, len(hp.languages))
 
     def _get_embedding(self, embedding_dimension, size=None):
         embedding = Embedding(size, embedding_dimension)
@@ -140,10 +142,16 @@ class Decoder(torch.nn.Module):
         c_gen = torch.zeros(batch_size, self._decoder_dim, device=device)
         return h_att, c_att, h_gen, c_gen
 
-    def _add_conditional_embedding(self, encoded, layer, condition):
+    def _add_conditional_embedding(self, encoded, layer, condition, is_one_hot=False):
         """Compute speaker (lang.) embedding and concat it to the encoder output."""
-        embedded = layer(encoded if condition is None else condition)
-        return torch.cat((encoded, embedded), dim=-1) 
+        if is_one_hot is False:
+            # embedding table lookup by nn.Embedding
+            embedded = layer(encoded if condition is None else condition)
+            return torch.cat((encoded, embedded), dim=-1)
+        elif is_one_hot is True:
+            # directly use one hot as embedding
+            return torch.cat((encoded, condition), dim=-1)
+
 
     def _decode(self, encoded_input, mask, target, teacher_forcing_ratio, speaker, language):
         """Perform decoding of the encoded input sequence."""
@@ -151,30 +159,30 @@ class Decoder(torch.nn.Module):
         batch_size = encoded_input.size(0)
         max_length = encoded_input.size(1)
         inference = target is None
-        max_frames = self._max_frames if inference else target.size(2) 
+        max_frames = self._max_frames if inference else target.size(2)
         input_device = encoded_input.device
 
         # obtain speaker and language embeddings (or a dummy tensor)
         if hp.multi_speaker and self._speaker_embedding is not None:
             encoded_input = self._add_conditional_embedding(encoded_input, self._speaker_embedding, speaker)
-        if hp.multi_language and self._language_embedding is not None:
-            encoded_input = self._add_conditional_embedding(encoded_input, self._language_embedding, language)
-        
-        # attention and decoder states initialization  
+        if hp.multi_language:
+            encoded_input = self._add_conditional_embedding(encoded_input, self._language_embedding, language, hp.one_hot_lang_emb)
+
+        # attention and decoder states initialization
         context = self._attention.reset(encoded_input, batch_size, max_length, input_device)
-        h_att, c_att, h_gen, c_gen = self._decoder_init(batch_size, input_device)      
-        
+        h_att, c_att, h_gen, c_gen = self._decoder_init(batch_size, input_device)
+
         # prepare some inference or train specific variables (teacher forcing, max. predicted length)
-        frame = torch.zeros(batch_size, self._output_dim, device=input_device) 
+        frame = torch.zeros(batch_size, self._output_dim, device=input_device)
         if not inference:
-            target = self._target_init(target, batch_size)  
+            target = self._target_init(target, batch_size)
             teacher = torch.rand([max_frames], device=input_device) > (1 - teacher_forcing_ratio)
-        
+
         # tensors for storing output
         spectrogram = torch.zeros(batch_size, max_frames, self._output_dim, device=input_device)
         alignments = torch.zeros(batch_size, max_frames, max_length, device=input_device)
         stop_tokens = torch.zeros(batch_size, max_frames, 1, device=input_device)
-        
+
         # decoding loop
         stop_frames = -1
         for i in range(max_frames):
@@ -186,26 +194,26 @@ class Decoder(torch.nn.Module):
             context, weights = self._attention(h_att, encoded_input, mask, prev_frame)
             generator_input = torch.cat((h_att, context), dim=1)
             h_gen, c_gen = self._generator_lstm(generator_input, h_gen, c_gen)
-            
+
             # predict frame and stop token
             proto_output = torch.cat((h_gen, context), dim=1)
             frame = self._frame_prediction(proto_output)
             stop_logits = self._stop_prediction(proto_output)
-            
+
             # store outputs
             spectrogram[:,i] = frame
             alignments[:,i] = weights
             stop_tokens[:,i] = stop_logits
-            
+
             # stop decoding if predicted (just during inference)
             if inference and torch.sigmoid(stop_logits).ge(0.5):
-                if stop_frames == -1: 
+                if stop_frames == -1:
                     stop_frames = hp.stop_frames
                     continue
                 stop_frames -= 1
                 if stop_frames == 0:
                     return spectrogram[:,:i+1], stop_tokens[:,:i+1].squeeze(2), alignments[:,:i+1]
-        
+
         return spectrogram, stop_tokens.squeeze(2), alignments
 
     def forward(self, encoded_input, encoded_lenghts, target, teacher_forcing_ratio, speaker, language):
@@ -217,7 +225,7 @@ class Decoder(torch.nn.Module):
         mask = utils.lengths_to_mask(torch.LongTensor([encoded_input.size(1)]))
         spectrogram, _, _ = self._decode(encoded_input, mask, None, 0.0, speaker, language)
         return spectrogram
-     
+
 
 class Tacotron(torch.nn.Module):
     """
@@ -232,9 +240,9 @@ class Tacotron(torch.nn.Module):
     def __init__(self):
         super(Tacotron, self).__init__()
 
-        # Encoder embedding 
+        # Encoder embedding
         other_symbols = 3 # PAD, EOS, UNK
-        self._embedding = Embedding(hp.symbols_count() + other_symbols, 
+        self._embedding = Embedding(hp.symbols_count() + other_symbols,
                                     hp.embedding_dimension, padding_idx=0)
         torch.nn.init.xavier_uniform_(self._embedding.weight)
 
@@ -246,7 +254,7 @@ class Tacotron(torch.nn.Module):
             self._reversal_classifier = self._get_adversarial_classifier(hp.reversal_classifier_type)
 
         # Prenet for transformation of previous predicted frame
-        self._prenet = Prenet(hp.num_mels, hp.prenet_dimension, hp.prenet_layers, hp.dropout)     
+        self._prenet = Prenet(hp.num_mels, hp.prenet_dimension, hp.prenet_layers, hp.dropout)
 
         # Speaker and language embeddings make decoder bigger
         decoder_input_dimension = hp.encoder_dimension
@@ -254,38 +262,38 @@ class Tacotron(torch.nn.Module):
             decoder_input_dimension += hp.speaker_embedding_dimension
         if hp.multi_language:
             decoder_input_dimension += hp.language_embedding_dimension
-        
-        # Decoder attention layer 
+
+        # Decoder attention layer
         self._attention = self._get_attention(hp.attention_type, decoder_input_dimension)
-        
+
         # Instantiate decoder RNN layers
         gen_cell_dimension = decoder_input_dimension + hp.decoder_dimension
         att_cell_dimension = decoder_input_dimension + hp.prenet_dimension
         if hp.decoder_regularization == 'zoneout':
-            generator_rnn = ZoneoutLSTMCell(gen_cell_dimension, hp.decoder_dimension, hp.zoneout_hidden, hp.zoneout_cell) 
+            generator_rnn = ZoneoutLSTMCell(gen_cell_dimension, hp.decoder_dimension, hp.zoneout_hidden, hp.zoneout_cell)
             attention_rnn = ZoneoutLSTMCell(att_cell_dimension, hp.decoder_dimension, hp.zoneout_hidden, hp.zoneout_cell)
         else:
-            generator_rnn = DropoutLSTMCell(gen_cell_dimension, hp.decoder_dimension, hp.dropout_hidden) 
+            generator_rnn = DropoutLSTMCell(gen_cell_dimension, hp.decoder_dimension, hp.dropout_hidden)
             attention_rnn = DropoutLSTMCell(att_cell_dimension, hp.decoder_dimension, hp.dropout_hidden)
 
-        # Decoder which controls attention and produces mel frames and stop tokens 
+        # Decoder which controls attention and produces mel frames and stop tokens
         self._decoder = Decoder(
-                        hp.num_mels, 
-                        hp.decoder_dimension, 
-                        self._attention, 
+                        hp.num_mels,
+                        hp.decoder_dimension,
+                        self._attention,
                         generator_rnn,
-                        attention_rnn, 
+                        attention_rnn,
                         decoder_input_dimension,
-                        self._prenet, 
+                        self._prenet,
                         hp.prenet_dimension,
-                        hp.max_output_length)      
+                        hp.max_output_length)
 
         # Postnet transforming predicted mel frames (residual mel or linear frames)
         self._postnet = self._get_postnet("cbhg" if hp.predict_linear else "conv")
 
     def _get_encoder(self, name):
         args = (hp.embedding_dimension,
-                hp.encoder_dimension, 
+                hp.encoder_dimension,
                 hp.encoder_blocks,
                 hp.encoder_kernel_size,
                 hp.dropout)
@@ -293,31 +301,31 @@ class Tacotron(torch.nn.Module):
         if name == "simple":
             return Encoder(*args)
         elif name == "separate":
-            return MultiEncoder(hp.language_number, args)  
+            return MultiEncoder(hp.language_number, args)
         elif name == "shared":
             return ConditionalEncoder(hp.language_number, hp.input_language_embedding, args)
         elif name == "convolutional":
             return ConvolutionalEncoder(hp.embedding_dimension, hp.encoder_dimension, 0.05, ln)
         elif name == "generated":
-            return GeneratedConvolutionalEncoder(hp.embedding_dimension, hp.encoder_dimension, 0.05, 
+            return GeneratedConvolutionalEncoder(hp.embedding_dimension, hp.encoder_dimension, 0.05,
                                                  hp.generator_dim, hp.generator_bottleneck_dim, groups=ln)
-    
+
     def _get_adversarial_classifier(self, name):
         if name == "reversal":
             return ReversalClassifier(
-                hp.encoder_dimension, 
-                hp.reversal_classifier_dim, 
+                hp.encoder_dimension,
+                hp.reversal_classifier_dim,
                 hp.speaker_number,
                 hp.reversal_gradient_clipping)
         elif name == "cosine":
             return CosineSimilarityClassifier(
-                hp.encoder_dimension, 
+                hp.encoder_dimension,
                 hp.speaker_number,
                 hp.reversal_gradient_clipping)
 
     def _get_attention(self, name, memory_dimension):
         args = (hp.attention_dimension,
-                hp.decoder_dimension, 
+                hp.decoder_dimension,
                 memory_dimension)
         if name == "location_sensitive":
             return LocationSensitiveAttention(
@@ -335,24 +343,26 @@ class Tacotron(torch.nn.Module):
     def _get_postnet(self, name):
         if name == "cbhg":
             return PostnetCBHG(
-                hp.num_mels, 
-                hp.num_fft // 2 + 1, 
-                hp.cbhg_bank_kernels, 
-                hp.cbhg_bank_dimension, 
-                hp.cbhg_projection_dimension, 
+                hp.num_mels,
+                hp.num_fft // 2 + 1,
+                hp.cbhg_bank_kernels,
+                hp.cbhg_bank_dimension,
+                hp.cbhg_projection_dimension,
                 hp.cbhg_projection_kernel_size,
-                hp.cbhg_highway_dimension, 
+                hp.cbhg_highway_dimension,
                 hp.cbhg_rnn_dim,
                 hp.cbhg_dropout)
         elif name == "conv":
             return Postnet(
-                hp.num_mels, 
+                hp.num_mels,
                 hp.postnet_dimension,
-                hp.postnet_blocks, 
-                hp.postnet_kernel_size, 
+                hp.postnet_blocks,
+                hp.postnet_kernel_size,
                 hp.dropout)
 
-    def forward(self, text, text_length, target, target_length, speakers, languages, teacher_forcing_ratio=0.0): 
+    def forward(self, text, text_length, target, target_length, speakers, languages, teacher_forcing_ratio=0.0):
+
+
         # enlarge speakers and languages to match sentence length if needed
         if speakers is not None and speakers.dim() == 1:
             speakers = speakers.unsqueeze(1).expand((-1, text.size(1)))
@@ -366,10 +376,13 @@ class Tacotron(torch.nn.Module):
 
         # predict language as an adversarial task if needed
         speaker_prediction = self._reversal_classifier(encoded) if hp.reversal_classifier else None
-        
-        # decode 
-        if languages is not None and languages.dim() == 3:
-            languages = torch.argmax(languages, dim=2) # convert one-hot into indices
+
+        # decode
+        if not hp.one_hot_lang_emb:
+            # when using emb table lookup, need to assure that languages is ints
+            # so that can use the emb table inside decoder
+            if languages is not None and languages.dim() == 3:
+                languages = torch.argmax(languages, dim=2) # convert one-hot into indices
         decoded = self._decoder(encoded, text_length, target, teacher_forcing_ratio, speakers, languages)
         prediction, stop_token, alignment = decoded
         pre_prediction = prediction.transpose(1,2)
@@ -392,11 +405,11 @@ class Tacotron(torch.nn.Module):
             speaker = speaker.unsqueeze(1).expand((-1, text.size(1)))
         if language is not None and language.dim() == 1:
             language = language.unsqueeze(1).expand((-1, text.size(1)))
-        
+
         # encode input
         embedded = self._embedding(text)
         encoded = self._encoder(embedded, torch.LongTensor([text.size(1)]), language)
-        
+
         # decode with respect to speaker and language embeddings
         if language is not None and language.dim() == 3:
             language = torch.argmax(language, dim=2) # convert one-hot into indices
@@ -410,7 +423,7 @@ class Tacotron(torch.nn.Module):
 
 class TacotronLoss(torch.nn.Module):
     """Wrapper around all loss functions including the loss of Tacotron 2.
-    
+
     Details:
         - L2 of the prediction before and after the postnet.
         - Cross entropy of the stop tokens
@@ -420,7 +433,7 @@ class TacotronLoss(torch.nn.Module):
 
     Arguments:
         guided_att_steps -- number of training steps for which the guided attention is enabled
-        guided_att_variance -- initial allowed variance of the guided attention (strictness of diagonal) 
+        guided_att_variance -- initial allowed variance of the guided attention (strictness of diagonal)
         guided_att_gamma -- multiplier which is applied to guided_att_variance at every update_states call
     """
 
@@ -448,20 +461,20 @@ class TacotronLoss(torch.nn.Module):
         weights = torch.zeros_like(alignments)
         for i, (f, l) in enumerate(zip(target_lengths, input_lengths)):
             grid_f, grid_l = torch.meshgrid(torch.arange(f, dtype=torch.float, device=input_device), torch.arange(l, dtype=torch.float, device=input_device))
-            weights[i, :f, :l] = 1 - torch.exp(-(grid_l/l - grid_f/f)**2 / (2 * self._g ** 2)) 
+            weights[i, :f, :l] = 1 - torch.exp(-(grid_l/l - grid_f/f)**2 / (2 * self._g ** 2))
 
-        # apply weights and compute mean loss 
+        # apply weights and compute mean loss
         loss = torch.sum(weights * alignments, dim=(1,2))
         loss = torch.mean(loss / target_lengths.float())
 
         return loss
 
-    def forward(self, source_length, target_length, pre_prediction, pre_target, post_prediction, post_target, stop, target_stop, alignment, 
+    def forward(self, source_length, target_length, pre_prediction, pre_target, post_prediction, post_target, stop, target_stop, alignment,
                 speaker, speaker_prediction, encoder_outputs, classifier):
         pre_target.requires_grad = False
         post_target.requires_grad = False
         target_stop.requires_grad = False
-        
+
         # standard Tacotron 2 loss, not the emphasis on mel_pre and the mask and weighting of positive class of stop_token
         stop_balance = torch.tensor([100], device=stop.device, dtype=torch.float32)
         losses = {
@@ -473,13 +486,13 @@ class TacotronLoss(torch.nn.Module):
         # loss of the adversarial classifier, if exists
         if hp.reversal_classifier:
             if hp.reversal_classifier_type == "reversal":
-                losses['lang_class'] = ReversalClassifier.loss(source_length, speaker, speaker_prediction) 
+                losses['lang_class'] = ReversalClassifier.loss(source_length, speaker, speaker_prediction)
             elif hp.reversal_classifier_type == "cosine":
-                losses['lang_class'] = CosineSimilarityClassifier.loss(source_length, speaker, speaker_prediction, encoder_outputs, classifier) 
+                losses['lang_class'] = CosineSimilarityClassifier.loss(source_length, speaker, speaker_prediction, encoder_outputs, classifier)
             losses['lang_class'] *= hp.reversal_classifier_w / (hp.num_mels + 2)
 
         # guided attention loss
-        if hp.guided_attention_loss: 
+        if hp.guided_attention_loss:
             losses['guided_att'] = self._guided_attention(alignment, source_length, target_length)
 
         return sum(losses.values()), losses

@@ -42,7 +42,7 @@ class Logger:
     @staticmethod
     def training(train_step, losses, gradient, learning_rate, duration, classifier):
         """Log batch training.
-        
+
         Arguments:
             train_step -- number of the current training step
             losses (dictionary of {loss name, value})-- dictionary with values of batch losses
@@ -50,20 +50,20 @@ class Logger:
             learning_rate (float) -- current learning rate
             duration (float) -- duration of the current step
             classifier (float) -- accuracy of the reversal classifier
-        """  
+        """
 
         # log losses
         total_loss = sum(losses.values())
         Logger._sw.add_scalar(f'Train/loss_total', total_loss, train_step)
         for n, l in losses.items():
-            Logger._sw.add_scalar(f'Train/loss_{n}', l, train_step)  
+            Logger._sw.add_scalar(f'Train/loss_{n}', l, train_step)
 
         # log gradient norm
         Logger._sw.add_scalar("Train/gradient_norm", gradient, train_step)
-        
+
         # log learning rate
         Logger._sw.add_scalar("Train/learning_rate", learning_rate, train_step)
-        
+
         # log duration
         Logger._sw.add_scalar("Train/duration", duration, train_step)
 
@@ -72,9 +72,9 @@ class Logger:
             Logger._sw.add_scalar(f'Train/classifier', classifier, train_step)
 
     @staticmethod
-    def evaluation(eval_step, losses, mcd, source_len, target_len, source, target, prediction_forced, prediction, stop_prediction, stop_target, alignment, classifier):
+    def evaluation(eval_step, losses, mcd, mcd_old_tasks, source_len, target_len, source, target, prediction_forced, prediction, stop_prediction, stop_target, alignment, classifier):
         """Log evaluation results.
-        
+
         Arguments:
             eval_step -- number of the current evaluation step (i.e. epoch)
             losses (dictionary of {loss name, value})-- dictionary with values of batch losses
@@ -89,19 +89,19 @@ class Logger:
             stop_target (tensor) -- true stop token probabilities
             alignment (tensor) -- alignments (attention weights for each frame) of the last evaluation batch
             classifier (float) -- accuracy of the reversal classifier
-        """  
+        """
 
         # log losses
         total_loss = sum(losses.values())
         Logger._sw.add_scalar(f'Eval/loss_total', total_loss, eval_step)
         for n, l in losses.items():
-            Logger._sw.add_scalar(f'Eval/loss_{n}', l, eval_step) 
+            Logger._sw.add_scalar(f'Eval/loss_{n}', l, eval_step)
 
         # show random sample: spectrogram, stop token probability, alignment and audio
         idx = random.randint(0, alignment.size(0) - 1)
         predicted_spec = prediction[idx, :, :target_len[idx]].data.cpu().numpy()
         f_predicted_spec = prediction_forced[idx, :, :target_len[idx]].data.cpu().numpy()
-        target_spec = target[idx, :, :target_len[idx]].data.cpu().numpy()  
+        target_spec = target[idx, :, :target_len[idx]].data.cpu().numpy()
 
         # log spectrograms
         if hp.normalize_spectrogram:
@@ -110,28 +110,31 @@ class Logger:
             target_spec = audio.denormalize_spectrogram(target_spec, not hp.predict_linear)
         Logger._sw.add_figure(f"Predicted/generated", Logger._plot_spectrogram(predicted_spec), eval_step)
         Logger._sw.add_figure(f"Predicted/forced", Logger._plot_spectrogram(f_predicted_spec), eval_step)
-        Logger._sw.add_figure(f"Target/eval", Logger._plot_spectrogram(target_spec), eval_step) 
-        
+        Logger._sw.add_figure(f"Target/eval", Logger._plot_spectrogram(target_spec), eval_step)
+
         # log audio
         waveform = audio.inverse_spectrogram(predicted_spec, not hp.predict_linear)
-        Logger._sw.add_audio(f"Audio/generated", waveform, eval_step, sample_rate=hp.sample_rate)  
+        Logger._sw.add_audio(f"Audio/generated", waveform, eval_step, sample_rate=hp.sample_rate)
         waveform = audio.inverse_spectrogram(f_predicted_spec, not hp.predict_linear)
-        Logger._sw.add_audio(f"Audio/forced", waveform, eval_step, sample_rate=hp.sample_rate)              
-        
+        Logger._sw.add_audio(f"Audio/forced", waveform, eval_step, sample_rate=hp.sample_rate)
+
         # log alignment
         alignment = alignment[idx, :target_len[idx], :source_len[idx]].data.cpu().numpy().T
-        Logger._sw.add_figure(f"Alignment/eval", Logger._plot_alignment(alignment), eval_step)                
-        
+        Logger._sw.add_figure(f"Alignment/eval", Logger._plot_alignment(alignment), eval_step)
+
         # log source text
         utterance = text.to_text(source[idx].data.cpu().numpy()[:source_len[idx]], hp.use_phonemes)
-        Logger._sw.add_text(f"Text/eval", utterance, eval_step)      
-        
+        Logger._sw.add_text(f"Text/eval", utterance, eval_step)
+
         # log stop tokens
-        Logger._sw.add_figure(f"Stop/eval", Logger._plot_stop_tokens(stop_target[idx].data.cpu().numpy(), stop_prediction[idx].data.cpu().numpy()), eval_step) 
-        
+        Logger._sw.add_figure(f"Stop/eval", Logger._plot_stop_tokens(stop_target[idx].data.cpu().numpy(), stop_prediction[idx].data.cpu().numpy()), eval_step)
+
         # log mel cepstral distorsion
         Logger._sw.add_scalar(f'Eval/mcd', mcd, eval_step)
-        
+
+        # log mel cepstral distorsion
+        Logger._sw.add_scalar(f'Eval/mcd_old_tasks', mcd_old_tasks, eval_step)
+
         # log reversal language classifier accuracy
         if hp.reversal_classifier:
             Logger._sw.add_scalar(f'Eval/classifier', classifier, eval_step)
@@ -153,7 +156,7 @@ class Logger:
         fig.colorbar(cax, ax=ax)
         plt.ylabel('Input index')
         plt.xlabel('Decoder step')
-        plt.tight_layout() 
+        plt.tight_layout()
         return fig
 
     @staticmethod
