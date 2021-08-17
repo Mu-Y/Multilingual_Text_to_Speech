@@ -345,7 +345,7 @@ if __name__ == '__main__':
         # initial_epoch = 0
         if args.checkpoint:
             checkpoint_state = torch.load(args.checkpoint, map_location='cpu')
-            hp.load_state_dict(checkpoint_state['parameters'])
+            # hp.load_state_dict(checkpoint_state['parameters'])
             # load model state dict (can be imcomplete if pretraining part of the model)
             model_dict = model.state_dict()
             pretrained_dict = {k: v for k, v in checkpoint_state['model'].items() if k in model_dict}
@@ -403,7 +403,11 @@ if __name__ == '__main__':
             torch.save(state_dict, "{}-fisher".format(checkpoint_file))
 
         # update the checkpoint to be used in the next task
-        args.checkpoint = "{}-fisher".format(checkpoint_file)
+        if hp.use_ewc:
+            args.checkpoint = "{}-fisher".format(checkpoint_file)
+        else:
+            args.checkpoint = checkpoint_file
+
 
         # make eval_data_old to be eval data for all tasks seen so far
         eval_data_old = list(eval_data_old) + list(eval_data)
