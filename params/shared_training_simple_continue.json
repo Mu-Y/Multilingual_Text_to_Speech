@@ -8,7 +8,7 @@
     "continue_languages": ["dutch", "finnish", "russian", "japanese", "greek"],
 	"dataset": "css10",
 	"encoder_type": "simple",
-	"epochs": 300,
+	"epochs": 150,
     "initial_training": false,
 	"languages": ["german", "french", "hungarian", "chinese", "spanish", "dutch", "finnish", "russian", "japanese", "greek"],
 	"language_embedding_dimension": 10,
@@ -22,6 +22,10 @@
     "sort_by_text_len": true,
     "use_ewc": false,
     "ewc_sample_size": 1024,
-    "ewc_importance": 10.0,
+    "ewc_importance": 1.0,
+    "use_kd": true,
+    "kd_stop_token": true,
+    "kd_attention": true,
+    "kd_importance": 0.5,
 	"version": "SHARED-TRAINING"
 }

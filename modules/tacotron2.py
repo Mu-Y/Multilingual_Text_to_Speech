@@ -411,8 +411,11 @@ class Tacotron(torch.nn.Module):
         encoded = self._encoder(embedded, torch.LongTensor([text.size(1)]), language)
 
         # decode with respect to speaker and language embeddings
-        if language is not None and language.dim() == 3:
-            language = torch.argmax(language, dim=2) # convert one-hot into indices
+        if not hp.one_hot_lang_emb:
+            # when using emb table lookup, need to assure that languages is ints
+            # so that can use the emb table inside decoder
+            if language is not None and language.dim() == 3:
+                language = torch.argmax(language, dim=2) # convert one-hot into indices
         prediction = self._decoder.inference(encoded, speaker, language)
 
         # post process generated spectrogram
@@ -494,5 +497,82 @@ class TacotronLoss(torch.nn.Module):
         # guided attention loss
         if hp.guided_attention_loss:
             losses['guided_att'] = self._guided_attention(alignment, source_length, target_length)
+
+        return sum(losses.values()), losses
+
+
+class TacotronLoss_kd(torch.nn.Module):
+    """KD loss between Teacher prediction and current model prediction.
+       Similar to the ICLR 2021 paper, everything is computed by L2 loss.
+    """
+
+    def __init__(self, kd_stop_token=True, kd_attention=True):
+        super(TacotronLoss_kd, self).__init__()
+        # self._g = guided_att_variance
+        # self._gamma = guided_att_gamma
+        # self._g_steps = guided_att_steps
+        self.kd_stop_token = kd_stop_token
+        self.kd_attention = kd_attention
+
+    # def load_state_dict(self, d):
+    #     for k, v in d.items(): setattr(self, k, v)
+
+    # def state_dict(self):
+    #     return { "_g": self._g, "_g_steps": self._g_steps }
+
+    # def update_states(self):
+    #     self._g *= self._gamma
+    #     self._g_steps = max(0, self._g_steps - 1)
+
+    def attention_kd(self, alignments, alignments_tchr):
+        # if self._g_steps == 0: return 0
+        # input_device = alignments.device
+
+        # # compute guided attention weights (diagonal matrix with zeros on a 'blurry' diagonal)
+        # weights = torch.zeros_like(alignments)
+        # for i, (f, l) in enumerate(zip(target_lengths, input_lengths)):
+        #     grid_f, grid_l = torch.meshgrid(torch.arange(f, dtype=torch.float, device=input_device), torch.arange(l, dtype=torch.float, device=input_device))
+        #     weights[i, :f, :l] = 1 - torch.exp(-(grid_l/l - grid_f/f)**2 / (2 * self._g ** 2))
+
+        # # apply weights and compute mean loss
+        # loss = torch.sum(weights * alignments, dim=(1,2))
+        # loss = torch.mean(loss / target_lengths.float())
+
+        # MSE loss between Teacher-generated alignments and Student-generated alignments
+        loss = F.mse_loss(alignments, alignments_tchr)
+
+        return loss
+
+    def forward(self, source_length, target_length, pre_prediction, pre_tchr, post_prediction, post_tchr, stop, stop_tchr, alignment, alignment_tchr,
+                speaker, speaker_prediction, encoder_outputs, classifier):
+        # pre_tchr.requires_grad = False
+        # post_tchr.requires_grad = False
+        # stop_tchr.requires_grad = False
+
+        pre_tchr = pre_tchr.detach()
+        post_tchr = post_tchr.detach()
+        stop_tchr = stop_tchr.detach()
+        alignment_tchr = alignment_tchr.detach()
+
+        # standard Tacotron 2 loss, not the emphasis on mel_pre and the mask and weighting of positive class of stop_token
+        # stop_balance = torch.tensor([100], device=stop.device, dtype=torch.float32)
+        losses = {
+            'mel_pre' : 2 * F.mse_loss(pre_prediction, pre_tchr),
+            'mel_pos' : F.mse_loss(post_prediction, post_tchr),
+        }
+        if self.kd_stop_token:
+            losses.update({'stop_token' : F.mse_loss(stop, stop_tchr) / (hp.num_mels + 2)})
+
+        # loss of the adversarial classifier, if exists
+        if hp.reversal_classifier:
+            if hp.reversal_classifier_type == "reversal":
+                losses['lang_class'] = ReversalClassifier.loss(source_length, speaker, speaker_prediction)
+            elif hp.reversal_classifier_type == "cosine":
+                losses['lang_class'] = CosineSimilarityClassifier.loss(source_length, speaker, speaker_prediction, encoder_outputs, classifier)
+            losses['lang_class'] *= hp.reversal_classifier_w / (hp.num_mels + 2)
+
+        # guided attention loss
+        if self.kd_attention:
+            losses['kd_att'] = self.attention_kd(alignment, alignment_tchr)
 
         return sum(losses.values()), losses
