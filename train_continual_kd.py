@@ -245,7 +245,8 @@ def compute_mcd_on_data_loader(data, model, mel_mean=None, mel_var=None):
         for i, batch in enumerate(data):
 
             # parse batch
-            # batch = list(map(to_gpu, batch))
+            if torch.cuda.is_available():
+                batch = list(map(to_gpu, batch))
             src, src_len, trg_mel, trg_lin, trg_len, stop_trg, spkrs, langs = batch
 
             # run the model (only once, without teacher forcing)
