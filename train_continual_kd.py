@@ -219,6 +219,57 @@ def evaluate(epoch, data, model, criterion, data_old_tasks=None):
     return sum(eval_losses.values())
 
 
+def compute_mcd_on_data_loader(data, model, mel_mean=None, mel_var=None):
+    """Main evaluation procedure.
+
+    Arguments:
+        epoch -- current epoch
+        data -- DataLoader which can provide validation batches
+        model -- model to be evaluated
+        criterion -- instance of loss function to measure performance
+    """
+
+    model.eval()
+
+    # For any given eval langauge, should provide the corresponding cached mel mean and var
+    # otherwise the model will use the mel mean and var that it was trained on
+    if mel_mean is not None and mel_var is not None:
+        hp.mel_normalize_mean = mel_mean
+        hp.mel_normalize_variance = mel_var
+
+    # initialize counters, etc.
+    mcd, mcd_count = 0, 0
+
+    # loop through epoch batches
+    with torch.no_grad():
+        for i, batch in enumerate(data):
+
+            # parse batch
+            # batch = list(map(to_gpu, batch))
+            src, src_len, trg_mel, trg_lin, trg_len, stop_trg, spkrs, langs = batch
+
+            # run the model (only once, without teacher forcing)
+            # post_pred, pre_pred, stop_pred, alignment, spkrs_pred, enc_output = model(src, src_len, trg_mel, trg_len, spkrs, langs, 1.0)
+            post_pred_0, _, stop_pred_0, alignment_0, _, _ = model(src, src_len, trg_mel, trg_len, spkrs, langs, 0.0)
+            stop_pred_probs = torch.sigmoid(stop_pred_0)
+
+
+            # compute mel cepstral distorsion
+            for j, (gen, ref, stop) in enumerate(zip(post_pred_0, trg_mel, stop_pred_probs)):
+                stop_idxes = np.where(stop.cpu().numpy() > 0.5)[0]
+                stop_idx = min(np.min(stop_idxes) + hp.stop_frames, gen.size()[1]) if len(stop_idxes) > 0 else gen.size()[1]
+                gen = gen[:, :stop_idx].data.cpu().numpy()
+                ref = ref[:, :trg_len[j]].data.cpu().numpy()
+                if hp.normalize_spectrogram:
+                    gen = audio.denormalize_spectrogram(gen, not hp.predict_linear)
+                    ref = audio.denormalize_spectrogram(ref, True)
+                if hp.predict_linear: gen = audio.linear_to_mel(gen)
+                mcd = (mcd_count * mcd + audio.mel_cepstral_distorision(gen, ref, 'dtw')) / (mcd_count+1)
+                mcd_count += 1
+
+    return mcd
+
+
 class DataParallelPassthrough(torch.nn.DataParallel):
     """Simple wrapper around DataParallel."""
     def __getattr__(self, name):

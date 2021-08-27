@@ -17,7 +17,7 @@ def to_gpu(x):
     return x.cuda(non_blocking=True) if torch.cuda.is_available() else x
 
 
-def remove_dataparallel_prefix(state_dict): 
+def remove_dataparallel_prefix(state_dict):
     """Removes dataparallel prefix of layer names in a checkpoint state dictionary."""
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
@@ -26,12 +26,12 @@ def remove_dataparallel_prefix(state_dict):
     return new_state_dict
 
 
-def build_model(checkpoint, force_cpu=False):   
+def build_model(checkpoint, force_cpu=False):
     """Load and build model a from checkpoint."""
     device = torch.device("cuda" if torch.cuda.is_available() and not force_cpu else "cpu")
     state = torch.load(checkpoint, map_location=device)
     hp.load_state_dict(state['parameters'])
     model = Tacotron()
-    model.load_state_dict(remove_dataparallel_prefix(state['model']))   
+    model.load_state_dict(remove_dataparallel_prefix(state['model']))
     model.to(device)
-    return model
+    return model, hp

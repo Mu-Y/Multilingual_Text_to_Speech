@@ -83,7 +83,7 @@ def synthesize_old(model, input_data, force_cpu=False):
 
     return s
 
-def synthesize(model, input_data, force_cpu=False):
+def synthesize(model, input_data, force_cpu=False, mel_mean=None, mel_var=None):
 
     item = input_data.split('|')
     clean_text = item[1]
@@ -132,6 +132,9 @@ def synthesize(model, input_data, force_cpu=False):
         if s is not None: s = s.cuda(non_blocking=True)
 
     s = model.inference(t, speaker=s, language=l).cpu().detach().numpy()
+    if mel_mean is not None and mel_var is not None:
+        hp.mel_normalize_mean = mel_mean
+        hp.mel_normalize_variance = mel_var
     s = audio.denormalize_spectrogram(s, not hp.predict_linear)
 
     return s
