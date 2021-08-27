@@ -40,7 +40,8 @@ class TextToSpeechDatasetCollection():
         val_full_path = os.path.join(dataset_root_dir, validation_file)
         if not os.path.exists(val_full_path):
             raise IOError(f'The validation set meta-file not found, given: {val_full_path}')
-        self.dev = TextToSpeechDataset(val_full_path, dataset_root_dir, self.train.unique_speakers)
+        # self.dev = TextToSpeechDataset(val_full_path, dataset_root_dir, self.train.unique_speakers)
+        self.dev = TextToSpeechDataset(val_full_path, dataset_root_dir)
         # assert len(self.dev.unique_speakers) == len(self.train.unique_speakers), (
         #         f'Validation set contains speakers which are not present in train set!')
 
