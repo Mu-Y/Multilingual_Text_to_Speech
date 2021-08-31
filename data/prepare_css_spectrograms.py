@@ -13,7 +13,7 @@ if __name__ == '__main__':
     import re
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--css10_directory", type=str, default="/mnt/data2/mu/datasets/css10", help="Base directory of CSS10.")
+    parser.add_argument("--css10_directory", type=str, default="/scratch2/mxy190019/Multilingual_Text_to_Speech/data/css10", help="Base directory of CSS10.")
     parser.add_argument("--css_comvoi_directory", type=str, default="/mnt/data2/mu/datasets/css_comvoi", help="Base directory of CSS10 with Common Voice.")
     parser.add_argument("--comvoi_directory", type=str, default="/mnt/data2/mu/datasets/comvoi_clean", help="Base directory of Common Voice.")
     parser.add_argument("--sample_rate", type=int, default=22050, help="Sample rate.")
@@ -30,14 +30,15 @@ if __name__ == '__main__':
     hp.num_fft = args.num_fft
 
     files_to_solve = [
-        (args.css10_directory, "train.txt"),
-        (args.css10_directory, "val.txt"),
-        (args.css_comvoi_directory, "train.txt"),
-        (args.css_comvoi_directory, "val.txt"),
+        (args.css10_directory, "train_ge+ch+ja.txt"),
+        (args.css10_directory, "val_ge+ch+ja.txt")
     ]
 
-    spectrogram_dirs = [os.path.join(args.comvoi_directory, 'spectrograms'),
-                        os.path.join(args.comvoi_directory, 'linear_spectrograms'),
+    # spectrogram_dirs = [os.path.join(args.comvoi_directory, 'spectrograms'),
+    #                     os.path.join(args.comvoi_directory, 'linear_spectrograms'),
+    #                     os.path.join(args.css10_directory, 'spectrograms'),
+    #                     os.path.join(args.css10_directory, 'linear_spectrograms')]
+    spectrogram_dirs = [
                         os.path.join(args.css10_directory, 'spectrograms'),
                         os.path.join(args.css10_directory, 'linear_spectrograms')]
     for x in spectrogram_dirs:

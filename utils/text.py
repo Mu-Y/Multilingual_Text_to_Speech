@@ -1,5 +1,5 @@
-import re 
-import string 
+import re
+import string
 
 from phonemizer.separator import Separator
 from phonemizer.phonemize import phonemize
@@ -30,25 +30,25 @@ def build_phoneme_dicts(text_lang_pairs):
             dictionaries[l][w] = _phonemize(w, l)[:-1]
         Logger.progress((i+1) / len(text_lang_pairs), prefix='Building phoneme dictionary:')
     return dictionaries
-    
+
 
 def to_phoneme(text, ignore_punctuation, language, phoneme_dictionary=None):
     """Convert graphemes of the utterance without new line to phonemes.
-    
+
     Arguments:
         text (string): The text to be translated into IPA.
         ignore_punctuation (bool): Set to False if the punctuation should be preserved.
         language (default hp.language): language code (e.g. en-us)
     Keyword argumnets:
-        phoneme_dictionary (default None): A language specific dictionary of words with IPA equivalents, 
+        phoneme_dictionary (default None): A language specific dictionary of words with IPA equivalents,
             used to speed up the translation which preserves punctuation (because the used phonemizer
             cannot handle punctuation properly, so we need to do it word by word).
     """
-    
+
     clear_text = remove_punctuation(text)
-    if ignore_punctuation: 
+    if ignore_punctuation:
         return _phonemize(clear_text)[:-1]
-    
+
     # phonemize words of the input text
     clear_words = clear_text.split()
     if not phoneme_dictionary: phoneme_dictionary = {}
@@ -56,25 +56,25 @@ def to_phoneme(text, ignore_punctuation, language, phoneme_dictionary=None):
     for w in clear_words:
         phonemes.append(phoneme_dictionary[w] if w in phoneme_dictionary else _phonemize(w, language)[:-1])
 
-    # add punctuation to match the punctuation in the input 
+    # add punctuation to match the punctuation in the input
     in_word = False
     punctuation_seen = False
     text_phonemes = ""
     clear_offset = word_idx = 0
-    
+
     for idx, char in enumerate(text):
         # encountered non-punctuation char
         if idx - clear_offset < len(clear_text) and char == clear_text[idx - clear_offset]:
             if not in_word:
-                if char in string.whitespace: 
+                if char in string.whitespace:
                     punctuation_seen = False
-                    continue    
+                    continue
                 in_word = True
                 text_phonemes += (' ' if idx != 0 and not punctuation_seen else '') + phonemes[word_idx]
-                word_idx += 1 
-            else: 
-                if char in string.whitespace: in_word = False 
-            punctuation_seen = False           
+                word_idx += 1
+            else:
+                if char in string.whitespace: in_word = False
+            punctuation_seen = False
         # this should be punctuation
         else:
             clear_offset += 1
@@ -88,11 +88,11 @@ def to_phoneme(text, ignore_punctuation, language, phoneme_dictionary=None):
 def _phonemize(text, language):
     try:
         seperators = Separator(word=' ', phone='')
-        phonemes = phonemize(text, separator=seperators, backend='espeak', language=language)           
+        phonemes = phonemize(text, separator=seperators, backend='espeak', language=language)
     except RuntimeError:
         epi = epitran.Epitran(language)
         phonemes = epi.transliterate(text, normpunc=True)
-    phonemes.replace('\n', ' ', 1)   
+    phonemes.replace('\n', ' ', 1)
     return phonemes
 
 
