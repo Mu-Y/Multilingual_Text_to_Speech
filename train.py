@@ -15,6 +15,7 @@ from utils.samplers import RandomImbalancedSampler, PerfectBatchSampler
 from utils import lengths_to_mask, to_gpu
 import warnings
 from ewc import EWC
+import pickle
 import pdb
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)  # do not print Deprecation Warnings
@@ -102,7 +103,7 @@ def train(logging_start_epoch, epoch, data, model, criterion, optimizer, ewc=Non
         done += 1
 
 
-def evaluate(epoch, data, model, criterion, data_old_tasks=None):
+def evaluate(epoch, data, model, criterion, eval_loaders=None):
     """Main evaluation procedure.
 
     Arguments:
@@ -171,37 +172,41 @@ def evaluate(epoch, data, model, criterion, data_old_tasks=None):
     for k in eval_losses.keys():
         eval_losses[k] /= len(data)
 
-
-    if data_old_tasks is not None:
-        mcd_old_tasks, mcd_count_old_tasks = 0., 0.
-        # loop through epoch batches
-        with torch.no_grad():
-            for i, batch in enumerate(data_old_tasks):
-
-                # parse batch
-                batch = list(map(to_gpu, batch))
-                src_old, src_len_old, trg_mel_old, trg_lin_old, trg_len_old, stop_trg_old, spkrs_old, langs_old = batch
-
-                # run the model (without teacher forcing, computing mcd only)
-                post_pred_0_old, _, stop_pred_0_old, _, _, _ = model(src_old, src_len_old, trg_mel_old, trg_len_old, spkrs_old, langs_old, 0.0)
-                stop_pred_probs = torch.sigmoid(stop_pred_0_old)
-
-
-                # compute mel cepstral distorsion
-                for j, (gen, ref, stop) in enumerate(zip(post_pred_0_old, trg_mel_old, stop_pred_probs)):
-                    stop_idxes = np.where(stop.cpu().numpy() > 0.5)[0]
-                    stop_idx = min(np.min(stop_idxes) + hp.stop_frames, gen.size()[1]) if len(stop_idxes) > 0 else gen.size()[1]
-                    gen = gen[:, :stop_idx].data.cpu().numpy()
-                    ref = ref[:, :trg_len_old[j]].data.cpu().numpy()
-                    if hp.normalize_spectrogram:
-                        gen = audio.denormalize_spectrogram(gen, not hp.predict_linear)
-                        ref = audio.denormalize_spectrogram(ref, True)
-                    if hp.predict_linear: gen = audio.linear_to_mel(gen)
-                    mcd_old_tasks = (mcd_count_old_tasks * mcd_old_tasks + audio.mel_cepstral_distorision(gen, ref, 'dtw')) / (mcd_count_old_tasks+1)
-                    mcd_count_old_tasks += 1
-
     # log evaluation
-    Logger.evaluation(epoch+1, eval_losses, mcd, mcd_old_tasks, src_len, trg_len, src, post_trg, post_pred, post_pred_0, stop_pred_probs, stop_trg, alignment_0, cla)
+    Logger.evaluation(epoch+1, eval_losses, mcd, src_len, trg_len, src, post_trg, post_pred, post_pred_0, stop_pred_probs, stop_trg, alignment_0, cla)
+
+    if eval_loaders is not None:
+        for eval_lang, eval_loader in eval_loaders:
+            mcd_old_tasks, mcd_count_old_tasks = 0., 0.
+            # loop through epoch batches
+            with torch.no_grad():
+                for i, batch in enumerate(eval_loader):
+
+                    # parse batch
+                    batch = list(map(to_gpu, batch))
+                    src_old, src_len_old, trg_mel_old, trg_lin_old, trg_len_old, stop_trg_old, spkrs_old, langs_old = batch
+
+                    # run the model (without teacher forcing, computing mcd only)
+                    post_pred_0_old, _, stop_pred_0_old, _, _, _ = model(src_old, src_len_old, trg_mel_old, trg_len_old, spkrs_old, langs_old, 0.0)
+                    stop_pred_probs = torch.sigmoid(stop_pred_0_old)
+
+
+                    # compute mel cepstral distorsion
+                    for j, (gen, ref, stop) in enumerate(zip(post_pred_0_old, trg_mel_old, stop_pred_probs)):
+                        stop_idxes = np.where(stop.cpu().numpy() > 0.5)[0]
+                        stop_idx = min(np.min(stop_idxes) + hp.stop_frames, gen.size()[1]) if len(stop_idxes) > 0 else gen.size()[1]
+                        gen = gen[:, :stop_idx].data.cpu().numpy()
+                        ref = ref[:, :trg_len_old[j]].data.cpu().numpy()
+                        if hp.normalize_spectrogram:
+                            gen = audio.denormalize_spectrogram(gen, not hp.predict_linear)
+                            ref = audio.denormalize_spectrogram(ref, True)
+                        if hp.predict_linear: gen = audio.linear_to_mel(gen)
+                        mcd_old_tasks = (mcd_count_old_tasks * mcd_old_tasks + audio.mel_cepstral_distorision(gen, ref, 'dtw')) / (mcd_count_old_tasks+1)
+                        mcd_count_old_tasks += 1
+
+            # add per-lang mcd to logger
+            Logger._sw.add_scalar(f'Eval/mcd_{eval_lang}', mcd_old_tasks, epoch+1)
+
 
     return sum(eval_losses.values())
 
@@ -263,9 +268,9 @@ if __name__ == '__main__':
 
     # merge training or continue training
     if hp.continue_training and hp.initial_training:
-        training_langs = hp.languages[:5]  # first 5 of the total 10 languages
+        training_langs = hp.training_langs
     elif hp.continue_training:
-        training_langs = hp.continue_languages   # the 1 langauge that is being trained
+        training_langs = hp.training_langs   # the 1 langauge that is being trained
         assert len(training_langs) == 1, print("in continue training after inital training, hp.languages must have only one language")
         # ensure later we don't use dataset sampler b/c there is only one language
         assert hp.balanced_sampling is False
@@ -274,6 +279,7 @@ if __name__ == '__main__':
     else:
         # merge training case
         training_langs = hp.languages
+
 
 
     if hp.multi_language and hp.balanced_sampling and hp.perfect_sampling:
@@ -301,15 +307,15 @@ if __name__ == '__main__':
         eval_data = DataLoader(dataset.dev, batch_size=hp.batch_size, drop_last=False, shuffle=False,
                                collate_fn=TextToSpeechCollate(True), num_workers=args.loader_workers)
 
-        ### old tasks dataloader, TODO
-        dataset_old = TextToSpeechDatasetCollection("./data/css10",
-                                                "train_initial5.txt", "val_initial5.txt")
-        dp_devices = args.max_gpus if hp.parallelization and torch.cuda.device_count() > 1 else 1
-        train_sampler_old = PerfectBatchSampler(dataset_old.train, hp.languages[:5], hp.batch_size, data_parallel_devices=dp_devices, shuffle=True, drop_last=True)
-        train_data_old = DataLoader(dataset_old.train, batch_sampler=train_sampler_old, collate_fn=TextToSpeechCollate(hp.sort_by_text_len), num_workers=args.loader_workers) # was false
-        eval_sampler_old = PerfectBatchSampler(dataset_old.dev, hp.languages[:5], hp.batch_size, data_parallel_devices=dp_devices, shuffle=False)
-        eval_data_old = DataLoader(dataset_old.dev, batch_sampler=eval_sampler_old, collate_fn=TextToSpeechCollate(hp.sort_by_text_len), num_workers=args.loader_workers) # was false
-        #############
+        #### old tasks dataloader, TODO
+        #dataset_old = TextToSpeechDatasetCollection("./data/css10",
+        #                                        "train_initial5.txt", "val_initial5.txt")
+        #dp_devices = args.max_gpus if hp.parallelization and torch.cuda.device_count() > 1 else 1
+        #train_sampler_old = PerfectBatchSampler(dataset_old.train, hp.languages[:5], hp.batch_size, data_parallel_devices=dp_devices, shuffle=True, drop_last=True)
+        #train_data_old = DataLoader(dataset_old.train, batch_sampler=train_sampler_old, collate_fn=TextToSpeechCollate(hp.sort_by_text_len), num_workers=args.loader_workers) # was false
+        #eval_sampler_old = PerfectBatchSampler(dataset_old.dev, hp.languages[:5], hp.batch_size, data_parallel_devices=dp_devices, shuffle=False)
+        #eval_data_old = DataLoader(dataset_old.dev, batch_sampler=eval_sampler_old, collate_fn=TextToSpeechCollate(hp.sort_by_text_len), num_workers=args.loader_workers) # was false
+        ##############
 
     # find out number of unique speakers and languages
     hp.speaker_number = 0 if not hp.multi_speaker else dataset.train.get_num_speakers()
@@ -319,12 +325,20 @@ if __name__ == '__main__':
         hp.unique_speakers = dataset.train.unique_speakers
 
     # acquire dataset-dependent constants, these should probably be the same while going from checkpoint
-    if not args.checkpoint:
-        # TODO: why we need this?
-        # compute per-channel constants for spectrogram normalization
-        hp.mel_normalize_mean, hp.mel_normalize_variance = dataset.train.get_normalization_constants(True)
-        if hp.predict_linear:
-            hp.lin_normalize_mean, hp.lin_normalize_variance = dataset.train.get_normalization_constants(False)
+    # if not args.checkpoint:
+    #     # TODO: why we need this?
+    #     # compute per-channel constants for spectrogram normalization
+    #     hp.mel_normalize_mean, hp.mel_normalize_variance = dataset.train.get_normalization_constants(True)
+    #     pdb.set_trace()
+    #     if hp.predict_linear:
+    #         hp.lin_normalize_mean, hp.lin_normalize_variance = dataset.train.get_normalization_constants(False)
+
+
+    ## always use the mean and std from all10 languages
+    with open("stats_per_lang_w-all10.pkl", "rb") as f:
+        stats = pickle.load(f)
+    hp.mel_normalize_mean = stats["all10"]["mel_normalize_mean"]
+    hp.mel_normalize_variance = stats["all10"]["mel_normalize_variance"]
 
     # instantiate model
     if torch.cuda.is_available():
@@ -383,6 +397,18 @@ if __name__ == '__main__':
     else:
         ewc = None
 
+    ## prepare eval data for each lang. For purpose of eval forgetting on each previous lang
+    eval_loaders = []
+    for lang in training_langs:
+        # load dataset
+        lang_dataset = TextToSpeechDatasetCollection(os.path.join(args.data_root, hp.dataset),
+                                                training_file=None,
+                                                validation_file="val_{}.txt".format(lang))
+        lang_eval_loader = DataLoader(lang_dataset.dev, batch_size=hp.batch_size, drop_last=False,
+                                      shuffle=False, collate_fn=TextToSpeechCollate(True),
+                                      num_workers=args.loader_workers)
+        eval_loaders.append((lang, lang_eval_loader))
+
 
     # training loop
     best_eval = float('inf')
@@ -390,7 +416,7 @@ if __name__ == '__main__':
         train(args.logging_start, epoch, train_data, model, criterion, optimizer, ewc)
         if hp.learning_rate_decay_start - hp.learning_rate_decay_each < epoch * len(train_data):
             scheduler.step()
-        eval_loss = evaluate(epoch, eval_data, model, criterion, eval_data_old)
+        eval_loss = evaluate(epoch, eval_data, model, criterion, eval_loaders)
         print("Epoch: {}, Eval_loss: {}".format(epoch, eval_loss))
         if (epoch + 1) % hp.checkpoint_each_epochs == 0:
             # save checkpoint together with hyper-parameters, optimizer and scheduler states
@@ -406,15 +432,16 @@ if __name__ == '__main__':
             torch.save(state_dict, checkpoint_file)
             print("Saved model to {}".format(checkpoint_file))
 
-    # after training on the current task, update the ewc fisher
-    ewc = EWC(model, criterion, train_data, hp.ewc_sample_size)
-    state_dict = {
-        'epoch': initial_epoch,
-        'model': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'scheduler': scheduler.state_dict(),
-        'parameters': hp.state_dict(),
-        'criterion': criterion.state_dict(),
-        'fisher': ewc.get_fisher()
-    }
-    torch.save(state_dict, "{}-fisher".format(checkpoint_file))
+    if hp.use_ewc:
+        # after training on the current task, update the ewc fisher
+        ewc = EWC(model, criterion, train_data, hp.ewc_sample_size)
+        state_dict = {
+            'epoch': initial_epoch,
+            'model': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'scheduler': scheduler.state_dict(),
+            'parameters': hp.state_dict(),
+            'criterion': criterion.state_dict(),
+            'fisher': ewc.get_fisher()
+        }
+        torch.save(state_dict, "{}-fisher".format(checkpoint_file))

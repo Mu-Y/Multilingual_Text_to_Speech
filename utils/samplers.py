@@ -17,6 +17,7 @@ class RandomImbalancedSampler(Sampler):
             label = data_source.items[idx]['language']
             if label in lebel_freq: lebel_freq[label] += 1
             else: lebel_freq[label] = 1
+        self.lebel_freq = lebel_freq
 
         total = float(sum(lebel_freq.values()))
         weights = [total / lebel_freq[data_source.items[idx]['language']] for idx in range(len(data_source))]

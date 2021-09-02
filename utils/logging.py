@@ -72,7 +72,7 @@ class Logger:
             Logger._sw.add_scalar(f'Train/classifier', classifier, train_step)
 
     @staticmethod
-    def evaluation(eval_step, losses, mcd, mcd_old_tasks, source_len, target_len, source, target, prediction_forced, prediction, stop_prediction, stop_target, alignment, classifier):
+    def evaluation(eval_step, losses, mcd, source_len, target_len, source, target, prediction_forced, prediction, stop_prediction, stop_target, alignment, classifier):
         """Log evaluation results.
 
         Arguments:
@@ -132,8 +132,8 @@ class Logger:
         # log mel cepstral distorsion
         Logger._sw.add_scalar(f'Eval/mcd', mcd, eval_step)
 
-        # log mel cepstral distorsion
-        Logger._sw.add_scalar(f'Eval/mcd_old_tasks', mcd_old_tasks, eval_step)
+        # # log mel cepstral distorsion
+        # Logger._sw.add_scalar(f'Eval/mcd_old_tasks', mcd_old_tasks, eval_step)
 
         # log reversal language classifier accuracy
         if hp.reversal_classifier:

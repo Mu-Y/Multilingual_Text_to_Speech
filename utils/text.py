@@ -6,6 +6,7 @@ from phonemizer.phonemize import phonemize
 import epitran
 from params.params import Params as hp
 from utils.logging import Logger
+import pdb
 
 
 _pad = '_'    # a dummy character for padding sequences to align text in batches to the same length
@@ -86,12 +87,16 @@ def to_phoneme(text, ignore_punctuation, language, phoneme_dictionary=None):
 
 
 def _phonemize(text, language):
+
+    language_tocode = {"german": "de", "french": "fr-fr", "spanish":"es"}
+
     try:
         seperators = Separator(word=' ', phone='')
-        phonemes = phonemize(text, separator=seperators, backend='espeak', language=language)
+        phonemes = phonemize(text, separator=seperators, backend='espeak', language=language_tocode[language])
     except RuntimeError:
-        epi = epitran.Epitran(language)
-        phonemes = epi.transliterate(text, normpunc=True)
+        if language == "chinese":
+            epi = epitran.Epitran(language_tocode[language], cedict_file="/home/grads/y/yangmu/cedict_ts.u8")
+            phonemes = epi.transliterate(text, normpunc=True)
     phonemes.replace('\n', ' ', 1)
     return phonemes
 
