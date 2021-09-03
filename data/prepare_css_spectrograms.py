@@ -30,8 +30,10 @@ if __name__ == '__main__':
     hp.num_fft = args.num_fft
 
     files_to_solve = [
-        (args.css10_directory, "train_ge+ch+ja.txt"),
-        (args.css10_directory, "val_ge+ch+ja.txt")
+        (args.css10_directory, "train_spanish.txt"),
+        (args.css10_directory, "val_spanish.txt"),
+        (args.css10_directory, "train_french.txt"),
+        (args.css10_directory, "val_french.txt")
     ]
 
     # spectrogram_dirs = [os.path.join(args.comvoi_directory, 'spectrograms'),

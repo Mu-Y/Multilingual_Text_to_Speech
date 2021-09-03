@@ -17,6 +17,7 @@ import warnings
 from ewc import EWC
 import copy
 import pickle
+import tqdm
 import pdb
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)  # do not print Deprecation Warnings
@@ -193,7 +194,7 @@ def evaluate(epoch, data, model, criterion, eval_loaders=None):
             mcd_old_tasks, mcd_count_old_tasks = 0., 0.
             # loop through epoch batches
             with torch.no_grad():
-                for i, batch in enumerate(eval_loaders):
+                for i, batch in enumerate(eval_loader):
 
                     # parse batch
                     batch = list(map(to_gpu, batch))
@@ -358,6 +359,8 @@ if __name__ == '__main__':
     hp.mel_normalize_variance = stats["all10"]["mel_normalize_variance"]
 
     initial_epoch=0
+    ewc = None
+    prev_model, criterion_kd = None, None
     for train_lang in hp.training_langs:
 
         # check directory
@@ -370,7 +373,7 @@ if __name__ == '__main__':
         # load dataset
         dataset = TextToSpeechDatasetCollection(os.path.join(args.data_root, hp.dataset),
                 f"train_{train_lang}_w-ipa.txt" if hp.use_phonemes else f"train_{train_lang}.txt",
-                f"val_{train_lang}.txt" if hp.use_phonemes else f"train_{train_lang}.txt")
+                f"val_{train_lang}_w-ipa.txt" if hp.use_phonemes else f"val_{train_lang}.txt")
 
         # # acquire dataset-dependent constants, these should probably be the same while going from checkpoint
         # # compute per-channel constants for spectrogram normalization
@@ -413,7 +416,7 @@ if __name__ == '__main__':
                 {'params': other_params},
                 {'params': encoder_params, 'lr': hp.learning_rate_encoder}
             ], lr=hp.learning_rate, weight_decay=hp.weight_decay)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, hp.learning_rate_decay_each // len(train_data), gamma=hp.learning_rate_decay)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, hp.learning_rate_decay_each, gamma=hp.learning_rate_decay)
         criterion = TacotronLoss(hp.guided_attention_steps, hp.guided_attention_toleration, hp.guided_attention_gain)
 
         # load model weights, fisher, and optimizer, scheduler states from checkpoint state dictionary
@@ -422,7 +425,7 @@ if __name__ == '__main__':
             checkpoint_state = torch.load(args.checkpoint, map_location='cpu')
             # hp.load_state_dict(checkpoint_state['parameters'])
             # load model state dict (can be imcomplete if pretraining part of the model)
-            # here, we only load model weights, hp, optimizer, scheduler, epoch step num should
+            # here, we only load model weights. hp, optimizer, scheduler, epoch step num should
             # NOT be loaded (unless in warm start mode) because we want a "fresh start" in each
             # training task
             model_dict = model.state_dict()
@@ -437,18 +440,8 @@ if __name__ == '__main__':
                 scheduler.load_state_dict(checkpoint_state['scheduler'])
                 criterion.load_state_dict(checkpoint_state['criterion'])
             print("model loaded from {}".format(args.checkpoint))
-            # if hp.use_ewc:
-            #     ewc = EWC(model, criterion)
-            #     ewc.load_fisher(checkpoint_state['fisher'])
-            # else:
-            #     ewc = None
-            # if hp.use_kd:
-            #     prev_model = copy.deepcopy(model).cuda()
-            #     prev_model.eval()
-            #     criterion_kd = TacotronLoss_kd(hp.kd_stop_token, hp.kd_attention)
-            # else:
-            #     prev_model = None
-            #     criterion_kd = None
+
+
 
         ## prepare eval data for each lang. For purpose of eval forgetting on each previous lang
         eval_loaders = []
@@ -463,15 +456,13 @@ if __name__ == '__main__':
                                           num_workers=args.loader_workers)
             eval_loaders.append((lang, lang_eval_loader))
 
-        ewc = None
-        prev_model, criterion_kd = None, None
 
         # training loop
         best_eval = float('inf')
         for epoch in range(initial_epoch, initial_epoch + hp.epochs):
             train(args.logging_start, epoch, train_data, model, criterion, optimizer, ewc, prev_model, criterion_kd)
-            if hp.learning_rate_decay_start - hp.learning_rate_decay_each < epoch * len(train_data):
-                scheduler.step()
+            # if hp.learning_rate_decay_start - hp.learning_rate_decay_each < epoch * len(train_data):
+            scheduler.step()
             eval_loss = evaluate(epoch, eval_data, model, criterion, eval_loaders)
             print("Epoch: {}, Eval_loss: {}".format(epoch, eval_loss))
             if (epoch + 1) % hp.checkpoint_each_epochs == 0:
@@ -490,7 +481,18 @@ if __name__ == '__main__':
 
         # after training on the current task, update the ewc fisher
         # ewc = EWC(model, criterion, train_data, hp.ewc_sample_size)
+        # if hp.use_ewc and args.checkpoint:
+        #     # have checkpoint generated by previous task
+        #     ewc = EWC(model, criterion)
+        #     ewc.load_fisher(checkpoint_state['fisher'])
+        # elif hp.use_ewc:
+        #     # the first task, do not have trained checkpoint yet
+        #     ewc = EWC(model, criterion)
+        # else:
+        #     ewc = None
         if hp.use_ewc:
+            ewc = EWC(model, criterion)
+            # ewc.load_fisher(checkpoint_state['fisher'])
             ewc.update_fisher(train_data, hp.ewc_sample_size)
             state_dict = {
                 'epoch': epoch,
@@ -502,25 +504,17 @@ if __name__ == '__main__':
                 'fisher': ewc.get_fisher()
             }
             torch.save(state_dict, "{}-fisher".format(checkpoint_file))
-
-        if hp.use_ewc:
-            ewc = EWC(model, criterion)
-            ewc.load_fisher(checkpoint_state['fisher'])
-        # else:
-        #     ewc = None
-        if hp.use_kd:
-            prev_model = copy.deepcopy(model).cuda()
-            prev_model.eval()
-            criterion_kd = TacotronLoss_kd(hp.kd_stop_token, hp.kd_attention)
-        # else:
-        #     prev_model = None
-        #     criterion_kd = None
-
         # update the checkpoint to be used in the next task
         if hp.use_ewc:
             args.checkpoint = "{}-fisher".format(checkpoint_file)
         else:
             args.checkpoint = checkpoint_file
+
+        if hp.use_kd:
+            prev_model = copy.deepcopy(model).cuda()
+            prev_model.eval()
+            criterion_kd = TacotronLoss_kd(hp.kd_stop_token, hp.kd_attention)
+
 
 
         # # make eval_data_old to be eval data for all tasks seen so far
