@@ -59,7 +59,8 @@ class Params:
     punctuations_in  = '\'-'             # punctuation which can occur inside a word, so whitespaces do not have to be present
     use_phonemes = False                 # phonemes are valid only if True, model uses phonemes instead of characters
     # all phonemes of IPA: 'iyɨʉɯuɪʏʊeøɘəɵɤoɛœɜɞʌɔæɐaɶɑɒᵻʘɓǀɗǃʄǂɠǁʛpbtdʈɖcɟkɡqɢʔɴŋɲɳnɱmʙrʀⱱɾɽɸβfvθðszʃʒʂʐçʝxɣχʁħʕhɦɬɮʋɹɻjɰlɭʎʟˈˌːˑʍwɥʜʢʡɕʑɺɧ ɚ˞ɫ'
-    phonemes = 'ɹɐpbtdkɡfvθðszʃʒhmnŋlrwjeəɪɒuːɛiaʌʊɑɜɔx '   # supported input phonemes, used if use_phonemes is True
+    # phonemes = 'ɹɐpbtdkɡfvθðszʃʒhmnŋlrwjeəɪɒuːɛiaʌʊɑɜɔx '   # supported input phonemes, used if use_phonemes is True
+    phonemes = 'vaɪst duːoihɾfəlkçzxnɑyɔebrʃʊɛøɜɡmpŋœjʒ̃wʁɲɒʌɹθɐβ¡ɣʎ¿ʝɟ'   # phonemes pulled from german+french+spanish data
 
     """
     ******************** PARAMETERS OF MODEL ********************

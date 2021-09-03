@@ -369,8 +369,8 @@ if __name__ == '__main__':
 
         # load dataset
         dataset = TextToSpeechDatasetCollection(os.path.join(args.data_root, hp.dataset),
-                                                "train_{}.txt".format(train_lang),
-                                                "val_{}.txt".format(train_lang))
+                f"train_{train_lang}_w-ipa.txt" if hp.use_phonemes else f"train_{train_lang}.txt",
+                f"val_{train_lang}.txt" if hp.use_phonemes else f"train_{train_lang}.txt")
 
         # # acquire dataset-dependent constants, these should probably be the same while going from checkpoint
         # # compute per-channel constants for spectrogram normalization
@@ -457,7 +457,7 @@ if __name__ == '__main__':
             # load dataset
             lang_dataset = TextToSpeechDatasetCollection(os.path.join(args.data_root, hp.dataset),
                                                     training_file=None,
-                                                    validation_file="val_{}.txt".format(lang))
+            validation_file=f"val_{lang}_w-ipa.txt" if hp.use_phonemes else f"val_{lang}.txt")
             lang_eval_loader = DataLoader(lang_dataset.dev, batch_size=hp.batch_size, drop_last=False,
                                           shuffle=False, collate_fn=TextToSpeechCollate(True),
                                           num_workers=args.loader_workers)

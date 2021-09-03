@@ -403,7 +403,7 @@ if __name__ == '__main__':
         # load dataset
         lang_dataset = TextToSpeechDatasetCollection(os.path.join(args.data_root, hp.dataset),
                                                 training_file=None,
-                                                validation_file="val_{}.txt".format(lang))
+                validation_file=f"val_{lang}_w-ipa.txt" if hp.use_phonemes else f"val_{lang}.txt")
         lang_eval_loader = DataLoader(lang_dataset.dev, batch_size=hp.batch_size, drop_last=False,
                                       shuffle=False, collate_fn=TextToSpeechCollate(True),
                                       num_workers=args.loader_workers)

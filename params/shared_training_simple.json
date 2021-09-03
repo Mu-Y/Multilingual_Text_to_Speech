@@ -11,6 +11,7 @@
 	"epochs": 300,
     "training_langs": ["german", "french", "spanish"],
 	"languages": ["german", "french", "spanish"],
+    "use_phonemes": true,
 	"language_embedding_dimension": 3,
 	"learning_rate": 0.001,
 	"learning_rate_decay_each": 10000,
@@ -20,8 +21,8 @@
     "perfect_sampling": false,
 	"predict_linear": false,
     "sort_by_text_len": true,
-    "training_file": "train_ge+fr+sp.txt",
-    "validation_file": "val_ge+fr+sp.txt",
+    "training_file": "train_ge+fr+sp_w-ipa.txt",
+    "validation_file": "val_ge+fr+sp_w-ipa.txt",
     "use_ewc": false,
     "ewc_sample_size": 1024,
 	"version": "SHARED-TRAINING"
