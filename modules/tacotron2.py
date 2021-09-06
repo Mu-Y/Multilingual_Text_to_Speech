@@ -112,6 +112,10 @@ class Decoder(torch.nn.Module):
         self._frame_prediction = Linear(context_dim + decoder_dim, output_dim)
         self._stop_prediction = Linear(context_dim + decoder_dim, 1)
 
+        if hp.use_replay and hp.aux_imbalance_sampling:
+            self._frame_prediction_rrs = Linear(context_dim + decoder_dim, output_dim)
+            self._stop_prediction_rrs = Linear(context_dim + decoder_dim, 1)
+
         self._speaker_embedding, self._language_embedding = None, None
 
         if hp.multi_speaker and hp.speaker_embedding_dimension > 0:
@@ -153,7 +157,7 @@ class Decoder(torch.nn.Module):
             return torch.cat((encoded, condition), dim=-1)
 
 
-    def _decode(self, encoded_input, mask, target, teacher_forcing_ratio, speaker, language):
+    def _decode(self, encoded_input, mask, target, teacher_forcing_ratio, speaker, language, is_rrs=False):
         """Perform decoding of the encoded input sequence."""
 
         batch_size = encoded_input.size(0)
@@ -197,8 +201,12 @@ class Decoder(torch.nn.Module):
 
             # predict frame and stop token
             proto_output = torch.cat((h_gen, context), dim=1)
-            frame = self._frame_prediction(proto_output)
-            stop_logits = self._stop_prediction(proto_output)
+            if is_rrs:
+                frame = self._frame_prediction_rrs(proto_output)
+                stop_logits = self._stop_prediction_rrs(proto_output)
+            else:
+                frame = self._frame_prediction(proto_output)
+                stop_logits = self._stop_prediction(proto_output)
 
             # store outputs
             spectrogram[:,i] = frame
@@ -216,14 +224,14 @@ class Decoder(torch.nn.Module):
 
         return spectrogram, stop_tokens.squeeze(2), alignments
 
-    def forward(self, encoded_input, encoded_lenghts, target, teacher_forcing_ratio, speaker, language):
+    def forward(self, encoded_input, encoded_lenghts, target, teacher_forcing_ratio, speaker, language, is_rrs=False):
         ml = encoded_input.size(1)
         mask = utils.lengths_to_mask(encoded_lenghts, max_length=ml)
-        return self._decode(encoded_input, mask, target, teacher_forcing_ratio, speaker, language)
+        return self._decode(encoded_input, mask, target, teacher_forcing_ratio, speaker, language, is_rrs)
 
     def inference(self, encoded_input, speaker, language):
         mask = utils.lengths_to_mask(torch.LongTensor([encoded_input.size(1)]))
-        spectrogram, _, _ = self._decode(encoded_input, mask, None, 0.0, speaker, language)
+        spectrogram, _, _ = self._decode(encoded_input, mask, None, 0.0, speaker, language, is_rrs=False)
         return spectrogram
 
 
@@ -360,7 +368,7 @@ class Tacotron(torch.nn.Module):
                 hp.postnet_kernel_size,
                 hp.dropout)
 
-    def forward(self, text, text_length, target, target_length, speakers, languages, teacher_forcing_ratio=0.0):
+    def forward(self, text, text_length, target, target_length, speakers, languages, teacher_forcing_ratio=0.0, is_rrs=False):
 
 
         # enlarge speakers and languages to match sentence length if needed
@@ -383,7 +391,7 @@ class Tacotron(torch.nn.Module):
             # so that can use the emb table inside decoder
             if languages is not None and languages.dim() == 3:
                 languages = torch.argmax(languages, dim=2) # convert one-hot into indices
-        decoded = self._decoder(encoded, text_length, target, teacher_forcing_ratio, speakers, languages)
+        decoded = self._decoder(encoded, text_length, target, teacher_forcing_ratio, speakers, languages, is_rrs)
         prediction, stop_token, alignment = decoded
         pre_prediction = prediction.transpose(1,2)
         post_prediction = self._postnet(pre_prediction, target_length)
