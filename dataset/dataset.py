@@ -73,9 +73,10 @@ class TextToSpeechDataset(torch.utils.data.Dataset):
         dataset_root_dir (string): Root Directory of the dataset.
     Keyword arguments:
         known_unique_speakers (list of string, default []): List of speaker UIDs (for initialization).
+        sample_size: number of samples pulled from the text (used in replay methods)
     """
 
-    def __init__(self, meta_file, dataset_root_dir, known_unique_speakers=[]):
+    def __init__(self, meta_file, dataset_root_dir, known_unique_speakers=[], sample_size=None):
         random.seed(1234)
         self.root_dir = dataset_root_dir
 
@@ -102,6 +103,9 @@ class TextToSpeechDataset(torch.utils.data.Dataset):
                         unique_speakers_set.add(line_tokens[1])
                         self.unique_speakers.append(line_tokens[1])
                     self.items.append(item)
+
+        if sample_size:
+            self.items = random.sample(self.items, sample_size)
 
         # clean text with basic stuff -- multiple spaces, case sensitivity and punctuation
         for idx in range(len(self.items)):
@@ -134,6 +138,35 @@ class TextToSpeechDataset(torch.utils.data.Dataset):
         mel_spec = self.load_spectrogram(audio_path, item['spectrogram'], hp.normalize_spectrogram, True)
         lin_spec = self.load_spectrogram(audio_path, item['linear_spectrogram'], hp.normalize_spectrogram, False) if hp.predict_linear else None
         return (item['speaker'], item['language'], item['phonemes'] if hp.use_phonemes else item['text'], mel_spec, lin_spec)
+
+    def concat_dataset(self, new_data):
+        """
+        new_data: an TextToSpeechDataset object
+        will update the self.items attribute
+        """
+        self_len = len(self.items)
+        new_len = len(new_data.items)
+
+        self.items.extend(new_data.items)
+
+        assert len(self.items) == self_len + new_len
+
+    def sample_n_items(self, n_items):
+        """
+        sample `n_items` from the list `self.items`
+        """
+        # self.items = self.items[:n_items]
+        self.items = random.sample(self.items, n_items)
+        return self
+
+    def remove(self, n_rm_items):
+        """
+        remove `n_rm_items` items from the list `self.items`
+        """
+        for i in range(n_rm_items):
+            rm_idx = random.randint(0, len(self.items))
+            self.items.pop(rm_idx)
+
 
     def load_spectrogram(self, audio_path, spectrogram_path, normalize, is_mel):
         """Load a mel or linear spectrogram from file or compute from scratch if needed.
