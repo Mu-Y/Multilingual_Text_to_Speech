@@ -510,7 +510,15 @@ if __name__ == '__main__':
         else:
             sampler = None  # for single-lang training, do not use any sampler
 
-        # shuffle = True if sampler is None else False
+
+        if hp.use_gem:
+            train_data = DataLoader(dataset.train, batch_size=hp.batch_size, drop_last=True,
+                                shuffle=True, sampler=None,
+                        collate_fn=TextToSpeechCollate(True), num_workers=args.loader_workers)
+            prev_data = DataLoader(prev_samples, batch_size=hp.batch_size, drop_last=False,
+                                shuffle=False, sampler=None,
+                        collate_fn=TextToSpeechCollate(True), num_workers=args.loader_workers)
+
 
         eval_data = DataLoader(dataset.dev, batch_size=hp.batch_size, drop_last=False, shuffle=False,
                                collate_fn=TextToSpeechCollate(True), num_workers=args.loader_workers)
