@@ -15,6 +15,7 @@ from utils.samplers import RandomImbalancedSampler, PerfectBatchSampler, Balance
 from utils import lengths_to_mask, to_gpu
 import warnings
 from ewc import EWC
+from gem import GEM
 import copy
 import pickle
 import tqdm
@@ -225,6 +226,87 @@ def train_aux(logging_start_epoch, epoch, data, model, criterion, optimizer, ewc
         start_time = time.time()
         done += 1
 
+def train_gem(logging_start_epoch, epoch, data, gem, cur_task_id):
+    """Main training procedure.
+
+    Arguments:
+        logging_start_epoch -- number of the first epoch to be logged
+        epoch -- current epoch
+        data -- DataLoader which can provide batches for an epoch
+        gem -- gem trainer
+    """
+
+    gem.train()
+    gem.net.train()
+
+    # initialize counters, etc.
+    learning_rate = gem.opt.param_groups[0]['lr']
+    cla = 0
+    done, start_time = 0, time.time()
+
+    # loop through epoch batches
+    for i, batch in enumerate(data):
+
+        global_step = done + epoch * len(data)
+        gem.opt.zero_grad()
+
+        # # parse batch
+        # batch = list(map(to_gpu, batch))
+        # src, src_len, trg_mel, trg_lin, trg_len, stop_trg, spkrs, langs = batch
+
+        # # get teacher forcing ratio
+        # if hp.constant_teacher_forcing: tf = hp.teacher_forcing
+        # else: tf = cos_decay(max(global_step - hp.teacher_forcing_start_steps, 0), hp.teacher_forcing_steps)
+
+        # # run the current model (student)
+        # post_pred, pre_pred, stop_pred, alignment, spkrs_pred, enc_output = model(src, src_len, trg_mel, trg_len, spkrs, langs, tf)
+        _, batch_losses, gradient = gem.observe(batch, cur_task_id)
+
+
+        # # evaluate loss function
+        # post_trg = trg_lin if hp.predict_linear else trg_mel
+        # classifier = model._reversal_classifier if hp.reversal_classifier else None
+        # loss, batch_losses = criterion(src_len, trg_len, pre_pred, trg_mel, post_pred, post_trg, stop_pred, stop_trg, alignment,
+        #                                spkrs, spkrs_pred, enc_output, classifier)
+
+        # if prev_model and criterion_kd:
+        #     # run the teacher model
+        #     with torch.no_grad():
+        #         post_pred_tchr, pre_pred_tchr, stop_pred_tchr, alignment_tchr, spkrs_pred_tchr, enc_output_tchr = prev_model(src, src_len, trg_mel, trg_len, spkrs, langs, tf)
+        #     # compute kd loss
+        #     loss_kd, batch_losses_kd = criterion_kd(src_len, trg_len, pre_pred, pre_pred_tchr, post_pred, post_pred_tchr, stop_pred, stop_pred_tchr, alignment, alignment_tchr,
+        #                                spkrs, spkrs_pred, enc_output, classifier)
+        #     # print("supervise loss: {:.4f}, kd loss: {:.4f}".format(loss.item(), loss_kd.item()))
+        #     loss += hp.kd_importance * loss_kd
+
+
+        # evaluate adversarial classifier accuracy, if present
+        if hp.reversal_classifier:
+            input_mask = lengths_to_mask(src_len)
+            trg_spkrs = torch.zeros_like(input_mask, dtype=torch.int64)
+            for s in range(hp.speaker_number):
+                speaker_mask = (spkrs == s)
+                trg_spkrs[speaker_mask] = s
+            matches = (trg_spkrs == torch.argmax(torch.nn.functional.softmax(spkrs_pred, dim=-1), dim=-1))
+            matches[~input_mask] = False
+            cla = torch.sum(matches).item() / torch.sum(input_mask).item()
+
+        # # comptute gradients and make a step
+        # if ewc is not None:
+        #     loss += hp.ewc_importance * ewc.penalty(model)
+        # loss.backward()
+        # gradient = torch.nn.utils.clip_grad_norm_(model.parameters(), hp.gradient_clipping)
+        # optimizer.step()
+
+        # log training progress
+        if epoch >= logging_start_epoch:
+            Logger.training(global_step, batch_losses, gradient, learning_rate, time.time() - start_time, cla)
+
+        # update criterion states (params and decay of the loss and so on ...)
+        gem.criterion.update_states()
+
+        start_time = time.time()
+        done += 1
 
 def evaluate(epoch, data, model, criterion, eval_loaders=None):
     """Main evaluation procedure.
@@ -487,7 +569,7 @@ if __name__ == '__main__':
         #     hp.lin_normalize_mean, hp.lin_normalize_variance = dataset.train.get_normalization_constants(False)
 
 
-        if hp.use_replay:
+        if hp.use_replay and (not hp.use_gem):
             dataset.train.concat_dataset(prev_samples)
             if hp.basic_imbalance_sampling:
                 sampler = RandomImbalancedSampler(dataset.train)
@@ -511,12 +593,14 @@ if __name__ == '__main__':
             sampler = None  # for single-lang training, do not use any sampler
 
 
-        if hp.use_gem:
+        if hp.use_replay and hp.use_gem:
+            ## For each new task, the data loader should only have 1 lang (current lang)
+            assert dataset.train.get_num_languages() == 1, print("Current task data loader has >1 langs")
             train_data = DataLoader(dataset.train, batch_size=hp.batch_size, drop_last=True,
                                 shuffle=True, sampler=None,
                         collate_fn=TextToSpeechCollate(True), num_workers=args.loader_workers)
             prev_data = DataLoader(prev_samples, batch_size=hp.batch_size, drop_last=False,
-                                shuffle=False, sampler=None,
+                                shuffle=True, sampler=None,
                         collate_fn=TextToSpeechCollate(True), num_workers=args.loader_workers)
 
 
@@ -619,12 +703,19 @@ if __name__ == '__main__':
                                           num_workers=args.loader_workers)
             eval_loaders.append((lang, lang_eval_loader))
 
+        if hp.use_gem:
+            n_tasks = prev_samples.get_num_languages() + 1 # +1 to include the current task
+            gem = GEM(model, criterion, optimizer, prev_data, n_tasks, hp)
+            cur_task_id = n_tasks - 1  # cur_task_id is always the last task
+
 
         # training loop
         best_eval = float('inf')
         for epoch in range(initial_epoch, initial_epoch + hp.epochs):
             if hp.use_replay and hp.aux_imbalance_sampling:
                 train_aux(args.logging_start, epoch, train_data, model, criterion, optimizer, ewc, prev_model, criterion_kd, train_data_rrs)
+            elif hp.use_replay and hp.use_gem:
+                train_gem(args.logging_start, epoch, train_data, gem, cur_task_id)
             else:
                 train(args.logging_start, epoch, train_data, model, criterion, optimizer, ewc, prev_model, criterion_kd)
             # if hp.learning_rate_decay_start - hp.learning_rate_decay_each < epoch * len(train_data):

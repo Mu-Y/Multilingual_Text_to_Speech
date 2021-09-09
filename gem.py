@@ -10,8 +10,10 @@ import torch.optim as optim
 
 import numpy as np
 import quadprog
+from utils import to_gpu
+import pdb
 
-from .common import MLP, ResNet18
+# from .common import MLP, ResNet18
 
 # Auxiliary functions useful for GEM's inner optimization.
 
@@ -102,7 +104,7 @@ class GEM(nn.Module):
         n_tasks: num of total tasks. should include current task. e.g when training french
                  n_tasks should be 2.
         """
-        super(Net, self).__init__()
+        super(GEM, self).__init__()
         self.hp = hp
         # nl, nh = args.n_layers, args.n_hiddens
         self.margin = hp.memory_strength
@@ -151,18 +153,18 @@ class GEM(nn.Module):
         # else:
         #     self.nc_per_task = n_outputs
 
-    def forward(self, x, t):
+    def forward(self, x):
         # output = self.net(x)
         # parse batch
         # batch = list(map(to_gpu, x))
-        src, src_len, trg_mel, trg_lin, trg_len, stop_trg, spkrs, langs = batch
+        src, src_len, trg_mel, trg_lin, trg_len, stop_trg, spkrs, langs = x
 
         # get teacher forcing ratio
         if self.hp.constant_teacher_forcing: tf = self.hp.teacher_forcing
         else: tf = cos_decay(max(global_step - self.hp.teacher_forcing_start_steps, 0), self.hp.teacher_forcing_steps)
 
-        # run the current model (student)
-        post_pred, pre_pred, stop_pred, alignment, spkrs_pred, enc_output = self.model(src, src_len, trg_mel, trg_len, spkrs, langs, tf)
+        # run the current model (teacher forcing )
+        post_pred, pre_pred, stop_pred, alignment, spkrs_pred, enc_output = self.net(src, src_len, trg_mel, trg_len, spkrs, langs, 1.0)
         # if self.is_cifar:
         #     # make sure we predict classes within the current task
         #     offset1 = int(t * self.nc_per_task)
@@ -226,23 +228,21 @@ class GEM(nn.Module):
             # -1 means exclude current task
             self.zero_grad()
             for batch in self.mem_data:
-                batch = list(map(to_gpu, batch))
-                # src, src_len, trg_mel, trg_lin, trg_len, stop_trg, spkrs, langs = batch
                 bs = batch[0].size(0)
                 batch_langs = batch[7]
                 # task_idx: an int representing task identifier.
                 # e.g. 0 for german, 1 for french, 2 for spanish
-                sel_indices = torch.cuda.LongTensor(
+                sel_indices = torch.LongTensor(
                          [i for i in range(bs) if batch_langs[i][0][task_idx]==1])
-                batch_task = [self.parse_batch_by_task(x, 0, sel_indices) for x in batch]
-                ### TODO make sure batch_langs will not be affected by the line above
-                pdb.set_trace()
+                batch_task = [self.parse_batch_by_task(x, sel_indices) for x in batch]
+                batch_task = list(map(to_gpu, batch_task))
+                src, src_len, trg_mel, trg_lin, trg_len, stop_trg, spkrs, langs = batch_task
                 post_pred, pre_pred, stop_pred, alignment, spkrs_pred, enc_output = self.forward(batch_task)
                 # evaluate loss function
                 # post_trg = trg_lin if self.hp.predict_linear else trg_mel
                 # classifier = self.model._reversal_classifier if self.hp.reversal_classifier else None
                 ptloss, _ = self.criterion(src_len, trg_len, pre_pred, trg_mel, post_pred, trg_mel, stop_pred, stop_trg, alignment, spkrs, spkrs_pred, enc_output, None)
-                ptloss.backward()
+                (ptloss/len(self.mem_data)).backward()
             store_grad(self.parameters, self.grads, self.grad_dims, task_idx)
 
 
@@ -252,10 +252,11 @@ class GEM(nn.Module):
         # offset1, offset2 = compute_offsets(t, self.nc_per_task, self.is_cifar)
         # loss = self.ce(self.forward(x, t)[:, offset1: offset2], y - offset1)
         batch = list(map(to_gpu, cur_batch))
+        src, src_len, trg_mel, trg_lin, trg_len, stop_trg, spkrs, langs = batch
         post_pred, pre_pred, stop_pred, alignment, spkrs_pred, enc_output = self.forward(batch)
         # post_trg = trg_lin if self.hp.predict_linear else trg_mel
         # classifier = self.model._reversal_classifier if self.hp.reversal_classifier else None
-        loss, _ = self.criterion(src_len, trg_len, pre_pred, trg_mel, post_pred, trg_mel, stop_pred, stop_trg, alignment, spkrs, spkrs_pred, enc_output, None)
+        loss, batch_losses = self.criterion(src_len, trg_len, pre_pred, trg_mel, post_pred, trg_mel, stop_pred, stop_trg, alignment, spkrs, spkrs_pred, enc_output, None)
         loss.backward()
 
         # # check if gradient violates constraints
@@ -277,7 +278,7 @@ class GEM(nn.Module):
         # check if gradient violates constraints
         # copy gradient
         store_grad(self.parameters, self.grads, self.grad_dims, cur_task)
-        indx = torch.cuda.LongTensor(torch.arange(cur_task))
+        indx = torch.cuda.LongTensor(list(range(cur_task)))
         dotp = torch.mm(self.grads[:, cur_task].unsqueeze(0),
                         self.grads.index_select(1, indx))
         if (dotp < 0).sum() != 0:
@@ -286,4 +287,7 @@ class GEM(nn.Module):
             # copy gradients back
             overwrite_grad(self.parameters, self.grads[:, cur_task],
                            self.grad_dims)
+
+        gradient = torch.nn.utils.clip_grad_norm_(self.net.parameters(), self.hp.gradient_clipping)
         self.opt.step()
+        return loss, batch_losses, gradient
