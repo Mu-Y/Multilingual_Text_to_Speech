@@ -137,6 +137,18 @@ def train_aux(logging_start_epoch, epoch, data, model, criterion, optimizer, ewc
     cla = 0
     done, start_time = 0, time.time()
 
+    # reset rrs_importance at beginning of each new task
+    if int(epoch) % hp.epochs == 0:
+        hp.rrs_importance = 1.0
+    # reduce rrs_importance by half each hp.aux_sampl_importance_dacay_each epochs
+    if int(epoch) > hp.epochs:
+        if int(epoch - hp.epochs) % hp.aux_sampl_importance_dacay_each == 0:
+            hp.rrs_importance = hp.rrs_importance / 2
+    else:
+        if int(epoch) % hp.aux_sampl_importance_dacay_each == 0:
+            hp.rrs_importance = hp.rrs_importance / 2
+
+
     # loop through epoch batches
     # data: cbs batch; data_aux: rrs batch
     for i, (batch_cbs, batch_rrs) in enumerate(zip(data, data_aux)):
@@ -165,14 +177,6 @@ def train_aux(logging_start_epoch, epoch, data, model, criterion, optimizer, ewc
         (hp.rrs_importance*loss_rrs).backward()
 
         ##### run primary batch (cbs batch)
-        # parse batch
-        batch = list(map(to_gpu, batch_cbs))
-        src, src_len, trg_mel, trg_lin, trg_len, stop_trg, spkrs, langs = batch
-
-        # get teacher forcing ratio
-        if hp.constant_teacher_forcing: tf = hp.teacher_forcing
-        else: tf = cos_decay(max(global_step - hp.teacher_forcing_start_steps, 0), hp.teacher_forcing_steps)
-
         # run the current model (student)
         post_pred, pre_pred, stop_pred, alignment, spkrs_pred, enc_output = model(src, src_len, trg_mel, trg_len, spkrs, langs, tf, is_rrs=False)
 
@@ -708,7 +712,7 @@ if __name__ == '__main__':
             gem = GEM(model, criterion, optimizer, prev_data, n_tasks, hp)
             cur_task_id = n_tasks - 1  # cur_task_id is always the last task
 
-
+        # if train_lang == "japanese":
         # training loop
         best_eval = float('inf')
         for epoch in range(initial_epoch, initial_epoch + hp.epochs):

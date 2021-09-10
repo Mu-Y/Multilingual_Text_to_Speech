@@ -1,6 +1,6 @@
 {
 	"balanced_sampling": false,
-	"batch_size": 72,
+	"batch_size": 84,
 	"case_sensitive": false,
 	"characters": " abcdefghijklmnopqrstuvwxyzçèéßäöōǎǐíǒàáǔüèéìūòóùúāēěīâêôûñőűабвгдежзийклмнопрстуфхцчшщъыьэюяёάέήίαβγδεζηθικλμνξοπρςíστυφχψωόύώ",
 	"checkpoint_each_epochs": 5,
@@ -27,10 +27,11 @@
     "kd_importance": 0.5,
     "use_replay": true,
     "basic_imbalance_sampling": false,
-    "aux_imbalance_sampling": false,
+    "aux_imbalance_sampling": true,
     "rrs_importance": 1.0,
     "cbs_importance": 0.5,
-    "use_gem": true,
+    "aux_sampl_importance_dacay_each": 60,
+    "use_gem": false,
     "memory_strength": 0.5,
     "replay_size": 300,
 	"version": "SHARED-TRAINING"
