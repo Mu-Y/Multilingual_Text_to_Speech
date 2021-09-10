@@ -234,6 +234,9 @@ class GEM(nn.Module):
                 # e.g. 0 for german, 1 for french, 2 for spanish
                 sel_indices = torch.LongTensor(
                          [i for i in range(bs) if batch_langs[i][0][task_idx]==1])
+                if not len(sel_indices) > 0:
+                    # batch does not have data for target task
+                    continue
                 batch_task = [self.parse_batch_by_task(x, sel_indices) for x in batch]
                 batch_task = list(map(to_gpu, batch_task))
                 src, src_len, trg_mel, trg_lin, trg_len, stop_trg, spkrs, langs = batch_task
