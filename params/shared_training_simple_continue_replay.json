@@ -30,7 +30,6 @@
     "aux_imbalance_sampling": true,
     "rrs_importance": 1.0,
     "cbs_importance": 0.5,
-    "aux_sampl_importance_dacay_each": 60,
     "use_gem": false,
     "memory_strength": 0.5,
     "replay_size": 300,

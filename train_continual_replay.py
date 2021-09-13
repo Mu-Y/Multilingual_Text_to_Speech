@@ -137,16 +137,16 @@ def train_aux(logging_start_epoch, epoch, data, model, criterion, optimizer, ewc
     cla = 0
     done, start_time = 0, time.time()
 
-    # reset rrs_importance at beginning of each new task
-    if int(epoch) % hp.epochs == 0:
-        hp.rrs_importance = 1.0
-    # reduce rrs_importance by half each hp.aux_sampl_importance_dacay_each epochs
-    if int(epoch) > hp.epochs:
-        if int(epoch - hp.epochs) % hp.aux_sampl_importance_dacay_each == 0:
-            hp.rrs_importance = hp.rrs_importance / 2
-    else:
-        if int(epoch) % hp.aux_sampl_importance_dacay_each == 0:
-            hp.rrs_importance = hp.rrs_importance / 2
+    # # reset rrs_importance at beginning of each new task
+    # if int(epoch) % hp.epochs == 0:
+    #     hp.rrs_importance = 1.0
+    # # reduce rrs_importance by half each hp.aux_sampl_importance_dacay_each epochs
+    # if int(epoch) > hp.epochs:
+    #     if int(epoch - hp.epochs) % hp.aux_sampl_importance_dacay_each == 0:
+    #         hp.rrs_importance = hp.rrs_importance / 2
+    # else:
+    #     if int(epoch) % hp.aux_sampl_importance_dacay_each == 0:
+    #         hp.rrs_importance = hp.rrs_importance / 2
 
 
     # loop through epoch batches
@@ -177,6 +177,9 @@ def train_aux(logging_start_epoch, epoch, data, model, criterion, optimizer, ewc
         (hp.rrs_importance*loss_rrs).backward()
 
         ##### run primary batch (cbs batch)
+        # parse batch
+        batch = list(map(to_gpu, batch_cbs))
+        src, src_len, trg_mel, trg_lin, trg_len, stop_trg, spkrs, langs = batch
         # run the current model (student)
         post_pred, pre_pred, stop_pred, alignment, spkrs_pred, enc_output = model(src, src_len, trg_mel, trg_len, spkrs, langs, tf, is_rrs=False)
 
