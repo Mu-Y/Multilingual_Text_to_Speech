@@ -298,6 +298,12 @@ class Tacotron(torch.nn.Module):
 
         # Postnet transforming predicted mel frames (residual mel or linear frames)
         self._postnet = self._get_postnet("cbhg" if hp.predict_linear else "conv")
+        try:
+            if hp.unique_postnet:
+                self._postnet_rrs = self._get_postnet("cbhg" if hp.predict_linear else "conv")
+        except:
+            pass
+
 
     def _get_encoder(self, name):
         args = (hp.embedding_dimension,
@@ -394,7 +400,10 @@ class Tacotron(torch.nn.Module):
         decoded = self._decoder(encoded, text_length, target, teacher_forcing_ratio, speakers, languages, is_rrs)
         prediction, stop_token, alignment = decoded
         pre_prediction = prediction.transpose(1,2)
-        post_prediction = self._postnet(pre_prediction, target_length)
+        if is_rrs and hp.unique_postnet:
+            post_prediction = self._postnet_rrs(pre_prediction, target_length)
+        else:
+            post_prediction = self._postnet(pre_prediction, target_length)
 
         # mask output paddings
         target_mask = utils.lengths_to_mask(target_length, target.size(2))

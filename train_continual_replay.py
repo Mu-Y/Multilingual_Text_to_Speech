@@ -593,8 +593,6 @@ if __name__ == '__main__':
                 train_data = DataLoader(dataset.train, batch_size=hp.batch_size, drop_last=True,
                                 shuffle=True, sampler=None,
                                 collate_fn=TextToSpeechCollate(True), num_workers=args.loader_workers)
-        else:
-            sampler = None  # for single-lang training, do not use any sampler
 
 
         if hp.use_replay and hp.use_gem:
@@ -607,6 +605,10 @@ if __name__ == '__main__':
                                 shuffle=True, sampler=None,
                         collate_fn=TextToSpeechCollate(True), num_workers=args.loader_workers)
 
+        if not hp.use_replay:
+            train_data = DataLoader(dataset.train, batch_size=hp.batch_size, drop_last=True,
+                                shuffle=True, sampler=None,
+                        collate_fn=TextToSpeechCollate(True), num_workers=args.loader_workers)
 
         eval_data = DataLoader(dataset.dev, batch_size=hp.batch_size, drop_last=False, shuffle=False,
                                collate_fn=TextToSpeechCollate(True), num_workers=args.loader_workers)
@@ -669,7 +671,7 @@ if __name__ == '__main__':
                 ewc = EWC(model, criterion)
                 ######### TO be uncommented
                 ewc.load_fisher(checkpoint_state['fisher'])
-                ########## TO be commented
+                ########### TO be commented
                 #dataset_old = TextToSpeechDatasetCollection(os.path.join(args.data_root, hp.dataset),
                 #    f"train_german_w-ipa.txt" if hp.use_phonemes else f"train_german.txt",
                 #    f"val_german_w-ipa.txt" if hp.use_phonemes else f"val_german.txt")
@@ -689,7 +691,7 @@ if __name__ == '__main__':
                 #}
                 #torch.save(state_dict, "{}-fisher".format(args.checkpoint))
                 #print("model saved to {}-fisher".format(args.checkpoint))
-                ##########################################
+                ###########################################
 
 
 

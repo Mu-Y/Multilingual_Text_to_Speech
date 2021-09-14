@@ -1,6 +1,6 @@
 {
 	"balanced_sampling": false,
-	"batch_size": 84,
+	"batch_size": 30,
 	"case_sensitive": false,
 	"characters": " abcdefghijklmnopqrstuvwxyzçèéßäöōǎǐíǒàáǔüèéìūòóùúāēěīâêôûñőűабвгдежзийклмнопрстуфхцчшщъыьэюяёάέήίαβγδεζηθικλμνξοπρςíστυφχψωόύώ",
 	"checkpoint_each_epochs": 5,
@@ -31,6 +31,7 @@
     "rrs_importance": 1.0,
     "cbs_importance": 0.5,
     "aux_sampl_importance_dacay_each": 60,
+    "unique_postnet": false,
     "use_gem": false,
     "memory_strength": 0.5,
     "replay_size": 300,
