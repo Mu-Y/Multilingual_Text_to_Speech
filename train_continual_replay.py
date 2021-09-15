@@ -137,16 +137,16 @@ def train_aux(logging_start_epoch, epoch, data, model, criterion, optimizer, ewc
     cla = 0
     done, start_time = 0, time.time()
 
-    # reset rrs_importance at beginning of each new task
-    if int(epoch) % hp.epochs == 0:
-        hp.rrs_importance = 1.0
-    # reduce rrs_importance by half each hp.aux_sampl_importance_dacay_each epochs
-    if int(epoch) > hp.epochs:
-        if int(epoch - hp.epochs) % hp.aux_sampl_importance_dacay_each == 0:
-            hp.rrs_importance = hp.rrs_importance / 2
-    else:
-        if int(epoch) > 0 and int(epoch) % hp.aux_sampl_importance_dacay_each == 0:
-            hp.rrs_importance = hp.rrs_importance / 2
+    # # reset rrs_importance at beginning of each new task
+    # if int(epoch) % hp.epochs == 0:
+    #     hp.rrs_importance = 1.0
+    # # reduce rrs_importance by half each hp.aux_sampl_importance_dacay_each epochs
+    # if int(epoch) > hp.epochs:
+    #     if int(epoch - hp.epochs) % hp.aux_sampl_importance_dacay_each == 0:
+    #         hp.rrs_importance = hp.rrs_importance / 2
+    # else:
+    #     if int(epoch) > 0 and int(epoch) % hp.aux_sampl_importance_dacay_each == 0:
+    #         hp.rrs_importance = hp.rrs_importance / 2
 
 
     # loop through epoch batches
@@ -566,14 +566,6 @@ if __name__ == '__main__':
         dataset = TextToSpeechDatasetCollection(os.path.join(args.data_root, hp.dataset),
                 f"train_{train_lang}_w-ipa.txt" if hp.use_phonemes else f"train_{train_lang}.txt",
                 f"val_{train_lang}_w-ipa.txt" if hp.use_phonemes else f"val_{train_lang}.txt")
-
-
-        # # acquire dataset-dependent constants, these should probably be the same while going from checkpoint
-        # # compute per-channel constants for spectrogram normalization
-        # # for each task (initial or continual), the mel mean and std should be re-computed
-        # hp.mel_normalize_mean, hp.mel_normalize_variance = dataset.train.get_normalization_constants(True)
-        # if hp.predict_linear:
-        #     hp.lin_normalize_mean, hp.lin_normalize_variance = dataset.train.get_normalization_constants(False)
 
 
         if hp.use_replay and (not hp.use_gem):

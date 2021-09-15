@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for lang in french spanish
+for lang in dutch
 do
     unzip -q ${lang}-single-speaker-speech-dataset.zip -d ${lang}
 done
