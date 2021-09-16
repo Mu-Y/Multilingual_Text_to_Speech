@@ -25,7 +25,7 @@
     "kd_stop_token": true,
     "kd_attention": true,
     "kd_importance": 0.5,
-    "use_replay": true,
+    "use_replay": false,
     "basic_imbalance_sampling": false,
     "aux_imbalance_sampling": false,
     "rrs_importance": 1.0,

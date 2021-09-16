@@ -266,20 +266,23 @@ if __name__ == '__main__':
                                             hp.training_file, hp.validation_file)
 
 
-    # merge training or continue training
-    if hp.continue_training and hp.initial_training:
-        training_langs = hp.training_langs
-    elif hp.continue_training:
-        training_langs = hp.training_langs   # the 1 langauge that is being trained
-        assert len(training_langs) == 1, print("in continue training after inital training, hp.languages must have only one language")
-        # ensure later we don't use dataset sampler b/c there is only one language
-        assert hp.balanced_sampling is False
-        assert hp.perfect_sampling is False, print("in continue training after initial training, sampler needs to be disabled b/c there is only one language")
-        assert args.checkpoint is not None, print("incontinue training after initial training, a checkpoint is required")
-    else:
-        # merge training case
-        training_langs = hp.languages
+    # # merge training or continue training
+    # if hp.continue_training and hp.initial_training:
+    #     training_langs = hp.training_langs
+    # elif hp.continue_training:
+    #     training_langs = hp.training_langs   # the 1 langauge that is being trained
+    #     assert len(training_langs) == 1, print("in continue training after inital training, hp.languages must have only one language")
+    #     # ensure later we don't use dataset sampler b/c there is only one language
+    #     assert hp.balanced_sampling is False
+    #     assert hp.perfect_sampling is False, print("in continue training after initial training, sampler needs to be disabled b/c there is only one language")
+    #     assert args.checkpoint is not None, print("incontinue training after initial training, a checkpoint is required")
+    # else:
+    #     # merge training case
+    #     training_langs = hp.languages
 
+    # we only do merge training case in this script
+    # TODO clean up all sampler and EWC stuff
+    training_langs = hp.languages
 
 
     if hp.multi_language and hp.balanced_sampling and hp.perfect_sampling:
