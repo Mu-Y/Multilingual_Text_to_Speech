@@ -31,7 +31,7 @@ class EWC(object):
             self._means[n] = variable(p.data)
 
 
-    def _diag_fisher(self, dataset, sample_size):
+    def _diag_fisher(self, dataset, sample_size=None):
         precision_matrices = {}
         for n, p in deepcopy(self.params).items():
             p.data.zero_()
@@ -72,16 +72,17 @@ class EWC(object):
             for n, p in self.model.named_parameters():
                 precision_matrices[n].data += p.grad.data ** 2
 
-            if cnt >= sample_size:
-                break
+            if sample_size:
+                if cnt >= sample_size:
+                    break
         print("computed Fisher using {} samples".format(cnt))
 
 
         precision_matrices = {n: p/cnt for n, p in precision_matrices.items()}  # mean over sampled data
         return precision_matrices
 
-    def update_fisher(self, dataset: DataLoader, sample_size: int):
-        self._precision_matrices = self._diag_fisher(dataset, sample_size)
+    def update_fisher(self, dataset: DataLoader, sample_size=None):
+        self._precision_matrices = self._diag_fisher(dataset, sample_size=sample_size)
 
     def load_fisher(self, fisher_matrices):
         assert fisher_matrices != {}

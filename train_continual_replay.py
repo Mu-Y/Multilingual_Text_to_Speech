@@ -667,25 +667,26 @@ if __name__ == '__main__':
                 ######### TO be uncommented
                 ewc.load_fisher(checkpoint_state['fisher'])
                 ########### TO be commented
-                #dataset_old = TextToSpeechDatasetCollection(os.path.join(args.data_root, hp.dataset),
-                #    f"train_german_w-ipa.txt" if hp.use_phonemes else f"train_german.txt",
-                #    f"val_german_w-ipa.txt" if hp.use_phonemes else f"val_german.txt")
-                #train_data_old = DataLoader(dataset_old.train, batch_size=hp.batch_size,
-                #        drop_last=True, shuffle=(not hp.multi_language or not hp.balanced_sampling),
-                #        sampler=sampler, collate_fn=TextToSpeechCollate(True),
-                #        num_workers=args.loader_workers)
-                #ewc.update_fisher(train_data_old, hp.ewc_sample_size)
-                #state_dict = {
-                #    'epoch': 99,
-                #    'model': model.state_dict(),
-                #    'optimizer': optimizer.state_dict(),
-                #    'scheduler': scheduler.state_dict(),
-                #    'parameters': hp.state_dict(),
-                #    'criterion': criterion.state_dict(),
-                #    'fisher': ewc.get_fisher()
-                #}
-                #torch.save(state_dict, "{}-fisher".format(args.checkpoint))
-                #print("model saved to {}-fisher".format(args.checkpoint))
+                # dataset_old = TextToSpeechDatasetCollection(os.path.join(args.data_root, hp.dataset),
+                #     f"train_german_w-ipa.txt" if hp.use_phonemes else f"train_german.txt",
+                #     f"val_german_w-ipa.txt" if hp.use_phonemes else f"val_german.txt")
+                # train_data_old = DataLoader(dataset_old.train, batch_size=hp.batch_size,
+                #         drop_last=True, shuffle=(not hp.multi_language or not hp.balanced_sampling),
+                #         sampler=None, collate_fn=TextToSpeechCollate(True),
+                #         num_workers=args.loader_workers)
+                # ewc.update_fisher(train_data_old)
+                # state_dict = {
+                #     'epoch': 99,
+                #     'model': model.state_dict(),
+                #     'optimizer': optimizer.state_dict(),
+                #     'scheduler': scheduler.state_dict(),
+                #     'parameters': hp.state_dict(),
+                #     'criterion': criterion.state_dict(),
+                #     'fisher': ewc.get_fisher()
+                # }
+                # torch.save(state_dict, "{}-fisher".format(args.checkpoint))
+                # print("model saved to {}-fisher".format(args.checkpoint))
+                # pdb.set_trace()
                 ###########################################
 
 
@@ -753,7 +754,7 @@ if __name__ == '__main__':
         if hp.use_ewc:
             ewc = EWC(model, criterion)
             # ewc.load_fisher(checkpoint_state['fisher'])
-            ewc.update_fisher(train_data, hp.ewc_sample_size)
+            ewc.update_fisher(train_data)
             state_dict = {
                 'epoch': epoch,
                 'model': model.state_dict(),
