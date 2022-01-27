@@ -1,6 +1,6 @@
 {
 	"balanced_sampling": false,
-	"batch_size": 32,
+	"batch_size": 84,
 	"case_sensitive": false,
 	"characters": " abcdefghijklmnopqrstuvwxyzçèéßäöōǎǐíǒàáǔüèéìūòóùúāēěīâêôûñőűабвгдежзийклмнопрстуфхцчшщъыьэюяёάέήίαβγδεζηθικλμνξοπρςíστυφχψωόύώ",
 	"checkpoint_each_epochs": 5,
